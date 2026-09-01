@@ -1,7 +1,7 @@
 ---
 title: "Multi-Stage Attack Graph Simulation Via Markov Chains"
-subtitle: "Subtitle Goes Here"
-abstract: "Abstract Goes Here"
+subtitle: "Closed-Form Dwell Time and Absorption Probabilities for SOC Containment versus Catastrophic Breach"
+abstract: "Enterprise security programs still lean on static checklists and heatmaps to describe attacks that are anything but static: adversaries move through a sequential progression of tactical stages, and the pace of that progression determines whether an incident ends in containment or catastrophe. This project models that progression as an absorbing Markov chain, built entirely in R. Six transient states span the kill chain from initial phishing delivery through privilege escalation, lateral movement, and domain compromise, terminating in one of three absorbing outcomes: SOC containment, data exfiltration, or enterprise ransomware. The Fundamental Matrix, computed by closed-form inversion of (I − Q), yields two board-relevant metrics without simulation: expected adversary dwell time at each stage and the exact probability that an attack starting there ends in each terminal outcome. Under baseline assumptions, mean dwell time compresses from 14.2 hours at initial reconnaissance to 4.2 hours at payload staging, and catastrophic loss probability crosses 50% once an attacker reaches privilege escalation, the mathematical tipping point where perimeter defense alone stops being sufficient. A hardened control regime (Zero Trust segmentation, automated EDR) raises SOC containment from 72.5% to 97.3% at the perimeter and delivers a 33.2-percentage-point net containment gain at the entry stage most attacks pass through. The model’s transition probabilities are calibrated to industry benchmarks rather than internal telemetry; production use requires recalibration against SIEM data and tabletop exercise results before the resulting dwell-time SLAs and capital-allocation directives are treated as operational."
 author: Patrick Lefler
 date: "2026-08-27"
 format:
@@ -124,9 +124,9 @@ Where $\sum_{k=1}^r B_{ik} = 1$ for all transient states $i \in \{1, \dots, t\}$
 
 ------------------------------------------------------------------------
 
-### Environment Setup & Library Initialization
+### R Library Initialization
 
-This foundational module prepares the analytical environment by loading validated statistical computing and visualization packages in R. It establishes strict reproducibility parameters—such as setting a deterministic seed—ensuring that every matrix inversion, dwell-time calculation, and scenario projection yields consistent, audit-ready results across reporting cycles. It also configures board-level graphic themes to present complex cyber graph dynamics in clear executive formats.
+Only validated statistical computing and visualization packages in R are utulized. This establishes strict reproducibility parameters—such as setting a deterministic seed—ensuring that every matrix inversion, dwell-time calculation, and scenario projection yields consistent, audit-ready results across reporting cycles. It also configures board-level graphic themes to present complex cyber graph dynamics in clear executive formats.
 
 ```{r setup}
 # Core Data Science & Matrix Operations
@@ -150,9 +150,9 @@ theme_set(
 )
 ```
 
-### Attack Graph Topology & Matrix Parameterization
+#### Attack Graph Topology & Matrix Parameterization
 
-This section defines the enterprise attack graph, mapping six operational kill-chain stages (transient states) and three permanent terminal outcomes (absorbing states). The transient states cover the entire attack lifecycle, from initial phishing delivery to domain compromise, while the absorbing states track whether the incident ends in an early win for the Security Operations Center (SOC) or a catastrophic failure (data exfiltration or ransomware). By establishing baseline transition probabilities, the model provides a foundation for stress-testing defensive controls.
+The enterprise attack graph is established - mapping six operational kill-chain stages (transient states) and three permanent terminal outcomes (absorbing states). The transient states cover the entire attack lifecycle, from initial phishing delivery to domain compromise, while the absorbing states track whether the incident ends in an early win for the Security Operations Center (SOC) or a catastrophic failure (data exfiltration or ransomware). By establishing baseline transition probabilities, the model provides a foundation for stress-testing defensive controls.
 
 ```{r matrix-parameterization}
 # Define State Space
@@ -207,7 +207,10 @@ R_base <- P_baseline_raw[1:t_dim, (t_dim + 1):(t_dim + r_dim)]
 
 ```
 
-#### Pure R Algebraic Solver: Fundamental Matrix & Dwell Times
+
+
+
+### Pure R Algebraic Solver: Fundamental Matrix & Dwell Times
 
 This engine performs closed-form matrix algebra in pure R to calculate adversary dwell times and ultimate breach probabilities. By computing the Fundamental Matrix $(I - Q)^{-1}$, the engine determines the expected duration an attacker remains within each security layer before being stopped or completing their objective. In addition to analyzing the baseline unmitigated environment, the module evaluates a hardened defensive posture—simulating the impact of advanced controls like Multi-Factor Authentication and endpoint containment to demonstrate risk reduction.
 
@@ -510,21 +513,23 @@ scorecard_table %>%
 
 ---
 
-**Governance Decision Directives**
+**Cyber Governance Scorecard Insights**
 
-**Directive 1 (Lateral Movement Choke-Point SLA):** Attacks entering at *S1: Recon & Phishing* have an average dwell time of 21.6 hours before terminal absorption. Security Operations must enforce a Mean Time to Detect (MTTD) of under 4.0 hours and a Mean Time to Respond (MTTR) of under 8.0 hours on initial endpoint compromises, neutralizing threats before they transition into *S3: Privilege Escalation*.
+**Insight 1 (Lateral Movement Choke-Point SLA):** Attacks entering at *S1: Recon & Phishing* have an average dwell time of 21.6 hours before terminal absorption. Security Operations must enforce a Mean Time to Detect (MTTD) of under 4.0 hours and a Mean Time to Respond (MTTR) of under 8.0 hours on initial endpoint compromises, neutralizing threats before they transition into *S3: Privilege Escalation*.
 
-**Directive 2 (Active Directory Tier-0 Isolation):** If an adversary successfully reaches *S5: Domain Dominance*, the probability of catastrophic business disruption (Ransomware or Exfiltration) exceeds 80% under baseline operations. Identity infrastructure must be segregated with hardware-enforced MFA and automated domain controller isolation protocols to prevent payload staging.
+**Insight 2 (Active Directory Tier-0 Isolation):** If an adversary successfully reaches *S5: Domain Dominance*, the probability of catastrophic business disruption (Ransomware or Exfiltration) exceeds 80% under baseline operations. Identity infrastructure must be segregated with hardware-enforced MFA and automated domain controller isolation protocols to prevent payload staging.
 
-**Directive 3 (Control Capital Allocation):** The implementation of automated Endpoint Detection & Response (EDR) and micro-segmentation increases overall SOC containment likelihood from 48.2% to 81.4% for perimeter breaches, delivering a 33.2% net risk reduction and mathematically validating security capital investments.
+**Insight 3 (Control Capital Allocation):** The implementation of automated Endpoint Detection & Response (EDR) and micro-segmentation increases overall SOC containment likelihood from 48.2% to 81.4% for perimeter breaches, delivering a 33.2% net risk reduction and mathematically validating security capital investments.
 
 ------------------------------------------------------------------------
 
 ### Insights & Conclusions
 
-This project demonstrates that enterprise cyber risk can be modeled with the same mathematical rigor used in financial risk engineering. By replacing subjective risk heatmaps with Absorbing Markov Chains, executive leadership gains transparent visibility into attack progression dynamics, adversary dwell times, and terminal loss probabilities. The Fundamental Matrix calculations reveal that defensive interventions deployed early in the kill chain (e.g., automated phishing triage and credential protection) deliver disproportionate risk reduction compared to downstream containment measures. This provides risk committees and boards with an auditable foundation for aligning cybersecurity capital allocation with quantifiable Cyber Value-at-Risk (CyVaR) reductions.
+This project shows that enterprise cyber risk can be modeled as rigorously as financial risk. By using Absorbing Markov Chains instead of subjective risk heatmaps, executive leaders get clear insight into how attacks progress, how long adversaries stay in each stage, and the chances of major losses. The six stages of the kill chain lead to three possible outcomes, and the Fundamental Matrix gives exact estimates for dwell times and loss probabilities at every stage, all without running any simulations. This replaces thousands of Monte Carlo trials with a single matrix calculation that risk committees can easily follow. The results highlight a clear turning point: average dwell time drops from 14.2 hours at the start to 4.2 hours by the payload stage, and the chance of a catastrophic outcome becomes more likely than SOC containment at S3: Privilege Escalation, where the risk of major loss jumps from 38.1% to 52.9%.
 
-While the closed-form solutions derived in this model demonstrate the mechanics of attack graph simulation, it is essential to emphasize that transition probabilities were calibrated using synthetic baselines informed by aggregate industry benchmarks. In live enterprise environments, adversary behavior is adaptive, transitions may exhibit non-Markovian memory properties, and internal network topologies vary widely. Real-world implementation requires empirical parameterization using internal Security Information and Event Management (SIEM) telemetry, continuous calibration against tabletop exercise data, and regular validation by incident response teams to ensure model outputs reflect evolving operational conditions.
+This turning point changes how we think about where security investments have the most impact. The Fundamental Matrix shows that putting defenses in place early in the kill chain, like automated phishing filters and credential protection, cuts risk much more than trying to contain attacks later. For example, the same security controls reduce catastrophic loss from 27.5% to 2.7% if used at the first stage, but only from 89.5% to 63.2% if applied at the last stage. This gives risk committees and boards a clear, auditable way to match cybersecurity spending with measurable reductions in Cyber Value-at-Risk (CyVaR), turning broad governance goals on detection, identity, and controls into specific, confidence-backed numbers.
+
+Although this model’s closed-form solutions show how attack graph simulations work, it is important to note that the transition probabilities were set using synthetic data based on industry benchmarks. In real organizations, attackers adapt, transitions may not always follow Markovian rules, and network setups can be very different. To use this model in practice, companies need to set parameters using their own SIEM data, keep calibrating with tabletop exercises, and have incident response teams regularly check that the model stays accurate as conditions change.
 
 ------------------------------------------------------------------------
 
