@@ -5,7 +5,7 @@ Author: Patrick Lefler
 
 Published: 2026-08-27
 
-Published Link: 
+Published Link: https://patrick-lefler.github.io/rQuarto_multi_stage_attack_graph_simulation_via_markov_chains_2026-08-27/
 
 ## Project Introduction
 > A closed-form absorbing Markov chain models the cyber kill chain in pure R, calculating adversary dwell time and containment-versus-catastrophe odds for board reporting.
