@@ -154,6 +154,26 @@ theme_set(
 
 The enterprise attack graph is established - mapping six operational kill-chain stages (transient states) and three permanent terminal outcomes (absorbing states). The transient states cover the entire attack lifecycle, from initial phishing delivery to domain compromise, while the absorbing states track whether the incident ends in an early win for the Security Operations Center (SOC) or a catastrophic failure (data exfiltration or ransomware). By establishing baseline transition probabilities, the model provides a foundation for stress-testing defensive controls.
 
+Here is the step-by-step breakdown of how the data was generated and structured:
+
+**Synthetic Graph Modeling:** A directed graph ‭$G = (V, E)$‬‭‬‭‬‭‬‭‬ ‭‬‭‬ was generated to represent the enterprise's IT/OT network topology, where vertices (‭$V$‬) represent network assets (e.g., domain controllers, database servers, web applications, endpoints, and IoT devices) and edges (‭$E$‬) represent reachable network paths, access pathways, and service dependencies between those assets.
+
+**Adjacency & Transition Matrices:** The directed connection graph was mapped into an adjacency matrix ‭$A$‬, which was subsequently row- or column-normalized to form the transition probability matrix ‭$M$‬ underlying the Markov chain process.
+PageRank and Criticality Calculation
+
+**Core PageRank Algorithm:** The standard PageRank formulation was applied over the transition matrix with a standard damping factor (‭$d \approx 0.85$‬‭‬):
+
+‭$$PR(u) = \frac{1-d}{\vert{}V\vert{}} + d \sum_{v \in B_u} \frac{PR(v)}{L(v)}$$‬‭‬‭‬‭‬‭‬‭‬‭‬‭‬
+
+where ‭$B_u$‬ is the set of nodes that link to node ‭$u$‬, and ‭$L(v)$‬‭‬‭‬‭‬ is the out-degree of node ‭$v$‬.
+	
+**Personalized / Biased Weighting:** In addition to structural reachability, teleports or personalized vectors (Personalized PageRank) were weighted using simulated asset impact values and intrinsic CVSS (Common Vulnerability Scoring System) base scores to measure cumulative lateral movement risk.
+Data Augmentation & Synthetic Attributes
+
+**Vulnerability & Exploitability Profiles:** Each simulated asset node was assigned generated risk attributes, including synthetic CVE IDs, CVSS v3.1 base metrics, exploitability sub-scores, asset categorization (e.g., Crown Jewels, Perimeter, Internal Workstations), and exploit maturity levels.
+
+**Loss Simulation Parameters:** Financial loss distributions were generated alongside the graph metrics to allow the structural centrality scores to map into quantitative cyber loss distributions.
+
 ```{r matrix-parameterization}
 # Define State Space
 transient_names <- c(
@@ -433,7 +453,7 @@ p4_reduction
 
 ------------------------------------------------------------------------
 
-### Enterprise Cyber Governance Scorecard & Executive Directives
+### Enterprise Cyber Governance Scorecard
 
 This governance section converts the underlying Markov matrix operations into board-level risk indicators. The summary scorecard details containment likelihood, catastrophic breach probabilities, and expected dwell times from each entry point. By establishing explicit defensive directives, this framework provides leadership with clear criteria for automating security response actions and allocating capital to high-risk control points.
 
@@ -530,6 +550,95 @@ This project shows that enterprise cyber risk can be modeled as rigorously as fi
 This turning point changes how we think about where security investments have the most impact. The Fundamental Matrix shows that putting defenses in place early in the kill chain, like automated phishing filters and credential protection, cuts risk much more than trying to contain attacks later. For example, the same security controls reduce catastrophic loss from 27.5% to 2.7% if used at the first stage, but only from 89.5% to 63.2% if applied at the last stage. This gives risk committees and boards a clear, auditable way to match cybersecurity spending with measurable reductions in Cyber Value-at-Risk (CyVaR), turning broad governance goals on detection, identity, and controls into specific, confidence-backed numbers.
 
 Although this model’s closed-form solutions show how attack graph simulations work, it is important to note that the transition probabilities were set using synthetic data based on industry benchmarks. In real organizations, attackers adapt, transitions may not always follow Markovian rules, and network setups can be very different. To use this model in practice, companies need to set parameters using their own SIEM data, keep calibrating with tabletop exercises, and have incident response teams regularly check that the model stays accurate as conditions change.
+
+The primary sources of this real world data include:
+
+**Network Telemetry & Flow Logs:** Real connection edges and service dependencies come from VPC Flow Logs (AWS/Azure/GCP), Zeek/Corelight network analysis sensors, and NetFlow/IPFIX from core network routers and firewalls.
+
+**Service Dependency & Configuration Management Databases (CMDB):** Service-to-service call maps are extracted from application performance monitoring tools (e.g., Datadog, Dynatrace), service mesh registries (e.g., Istio, Envoy), and enterprise CMDBs (e.g., ServiceNow).
+
+**Vulnerability Management & Posture Assessment Scanners:** Real-world CVSS scores, exploit metrics, and missing patches are pulled directly via API from enterprise vulnerability scanners such as Tenable Nessus, Qualys, Rapid7 InsightVM, or cloud posture platforms (Wiz, Prisma Cloud).
+
+**Active Directory & Identity Access Graphs:** Identity edges and lateral movement pathways are exported from tools like BloodHound Enterprise, Microsoft Entra ID, and Okta Access Graph logs.
+
+And finally let's not kid ourselves, obtaining this type of accurate data at scale is no easy task.
+
+``` {r difficulty-and-operational-challenges-table}
+
+# 1. Recreate the dataset
+data_ingestion_tbl <- tibble(
+  ingestion_layer = c(
+    "Network & Firewall Flows",
+    "Vulnerability & Exploit Feeds",
+    "Microservice & Service Topology",
+    "Identity & Privilege Paths",
+    "Data Normalization & Reconciliation"
+  ),
+  acquisition_difficulty = c(
+    "Moderate",
+    "Low to Moderate",
+    "High",
+    "Moderate to High",
+    "High"
+  ),
+  key_operational_challenges = c(
+    "Massive log volume and high egress costs; ephemeral cloud workloads and container IPs change constantly, requiring dynamic IP-to-asset mapping.",
+    "Scanners provide standardized CVSS scores easily, but unauthenticated scans miss local software dependencies and internal configurations.",
+    "Modern distributed applications have thousands of interdependent microservices; legacy CMDBs are frequently out-of-date and incomplete without automated runtime tracing.",
+    "Multi-hop privilege escalation (nested Active Directory groups and delegated cloud IAM roles) requires specialized graph extraction agents.",
+    "Correlating disparate naming conventions across cloud providers, on-prem active directories, and scanner hostnames into a single cohesive graph topology is the single most time-consuming engineering barrier."
+  )
+)
+
+# 2. Build the gt table matching the dark theme and typography
+gt_table <- data_ingestion_tbl %>%
+  gt() %>%
+  cols_label(
+    ingestion_layer = "Ingestion Layer",
+    acquisition_difficulty = "Acquisition Difficulty",
+    key_operational_challenges = "Key Operational Challenges"
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold", color = "#000000"),
+    locations = list(
+      cells_body(columns = c(ingestion_layer, acquisition_difficulty)),
+      cells_column_labels(columns = everything())
+    )
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "normal", color = "#000000"),
+    locations = cells_body(columns = key_operational_challenges)
+  ) %>%
+  tab_style(
+    style = cell_text(size = px(14), font = "system-ui"),
+    locations = list(
+      cells_body(columns = everything()),
+      cells_column_labels(columns = everything())
+    )
+  ) %>%
+ tab_header(
+    title = "Difficulty and Operational Challenges in Acquiring Accurate Data"
+  ) %>%
+  tab_options(
+    table.background.color = "#ffffff",
+    column_labels.background.color = "#ffffff",
+    column_labels.border.top.style = "none",
+    column_labels.border.bottom.style = "none",
+    table_body.border.top.style = "none",
+    table_body.border.bottom.style = "none",
+    table_body.hlines.style = "none",
+    table_body.vlines.style = "none",
+    data_row.padding = px(18),
+    table.width = pct(100)
+  )
+
+# Display table
+gt_table
+
+```
+
+
+
 
 ------------------------------------------------------------------------
 
