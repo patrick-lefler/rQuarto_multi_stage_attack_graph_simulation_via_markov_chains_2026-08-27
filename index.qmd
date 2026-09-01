@@ -283,7 +283,9 @@ The four dianostic plots below help visualize the multi-stage attack dynamics th
 
 #### The Transition Probability Matrix (P) plot
 
-The Transition Probability Matrix (P) plot visualizes the structural pathways of an intrusion, providing leadership with an auditable map of how operational risk circulates across each tactical phase of an attack. It is critical for uncovering hidden choke points and identifying the specific stages where defensive interventions can break the adversary's momentum.
+The Transition Probability Matrix (P) plot shows the main paths an intrusion can take, giving leaders a clear map of how operational risk moves through each stage of an attack. This helps reveal hidden weak spots and pinpoints where defenses can stop an attacker’s progress.
+
+The matrix visually proves that defensive leverage lives upstream. In the early stages (‭$S_1$‬ and ‭$S_2$‬), the organization has a ‭$25\%$‬‭‬ chance per step of stopping the incident cold. By stage ‭$S_6$‬, containment drops to ‭$10\%$‬‭‬, and catastrophic business interruption becomes the overwhelming default (‭$85\%$‬‭‬). This mathematical progression makes the case for investing in automated containment and identity controls that break the chain before an adversary ever leaves stage ‭$S_2$‬.
 
 ```{r transition-probability-matrix-plot}
 # Panel A: Transition Probability Heatmap (Q and R Submatrices)
@@ -311,6 +313,24 @@ p1_heatmap <- ggplot(matrix_df, aes(x = To_State, y = From_State, fill = Probabi
 p1_heatmap
 
 ```
+**How to understand the workflow of the MITRE ATT&CK Transition Probability Matrix (P) plot**
+
+The matrix functions like a flight board for a cyber intrusion, tracking where an attacker currently is on the vertical axis (Origin State) and mapping the exact probability of where they can move in their next step on the horizontal axis (Target State).
+
+Every row adds up to ‭$1.00$‬ (‭$100\%$‬‭‬), accounting for every possible next move. The darker red the box, the higher the likelihood of that transition occurring.
+
+How to Read the Flow
+
+1.	The In-Progress Attack Stages (‭$S_1$‬ through ‭$S_6$‬): These are temporary phases where the adversary is actively maneuvering inside the network. Notice the heavy red band cutting down the diagonal: once an attack begins, the attacker has strong forward momentum moving from one step to the next deeper tier.
+	
+2.	The Exit Points / Permanent Outcomes (‭$A_1$‬ through ‭$A_3$‬): Once an intrusion reaches one of these three columns, the incident is over:
+•	‭$A_1$‬: SOC Containment: The defensive win—our Security Operations Center intercepts and neutralizes the threat before catastrophic damage occurs.
+•	‭$A_2$‬: Data Exfiltration: The attacker successfully steals confidential corporate or customer records.
+•	‭$A_3$‬: Enterprise Ransomware: The attacker detonates malware, encrypting servers and shutting down business operations.
+	
+3.	The Bottom Right (‭$1.00$‬ Values): Notice that ‭$A_1$‬, ‭$A_2$‬, and ‭$A_3$‬ have a ‭$1.00$‬ (‭$100\%$‬‭‬) where they intersect themselves and zero everywhere else. In mathematics, these are "absorbing" states—once an attack is contained or detonates, it cannot loop back into earlier stages.
+
+---
 
 **How to interpret the results of the MITRE ATT&CK Transition Probability Matrix (P) plot**
 
@@ -505,7 +525,7 @@ scorecard_table %>%
   )
 ```
 
-**How to read the table and associated columns of the Cyber Governance Scorecard**
+**How to understand the table and associated columns of the Cyber Governance Scorecard**
 
 **Breach Entry Stage:** The specific tactical step in the cyber kill chain where the intruder currently resides or where defensive visibility first detects the intrusion. It establishes the starting point for calculating all subsequent attack pathways.
 
