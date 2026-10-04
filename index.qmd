@@ -1,7 +1,7 @@
 ---
 title: "Multi-Stage Attack Graph Simulation Via Markov Chains"
-subtitle: "Closed-Form Dwell Time and Absorption Probabilities for SOC Containment versus Catastrophic Breach"
-abstract: "Enterprise security programs still lean on static checklists and heatmaps to describe attacks that are anything but static: adversaries move through a sequential progression of tactical stages, and the pace of that progression determines whether an incident ends in containment or catastrophe. This project models that progression as an absorbing Markov chain, built entirely in R. Six transient states span the kill chain from initial phishing delivery through privilege escalation, lateral movement, and domain compromise, terminating in one of three absorbing outcomes: SOC containment, data exfiltration, or enterprise ransomware. The Fundamental Matrix, computed by closed-form inversion of (I − Q), yields two board-relevant metrics without simulation: expected adversary dwell time at each stage and the exact probability that an attack starting there ends in each terminal outcome. Under baseline assumptions, mean dwell time compresses from 14.2 hours at initial reconnaissance to 4.2 hours at payload staging, and catastrophic loss probability crosses 50% once an attacker reaches privilege escalation, the mathematical tipping point where perimeter defense alone stops being sufficient. A hardened control regime (Zero Trust segmentation, automated EDR) raises SOC containment from 72.5% to 97.3% at the perimeter and delivers a 33.2-percentage-point net containment gain at the entry stage most attacks pass through. The model’s transition probabilities are calibrated to industry benchmarks rather than internal telemetry; production use requires recalibration against SIEM data and tabletop exercise results before the resulting dwell-time SLAs and capital-allocation directives are treated as operational."
+subtitle: "Closed-Form Time to Resolution and Absorption Probabilities for Containment versus Catastrophic Breach"
+abstract: "Enterprise security programs still lean on static checklists and heatmaps to describe attacks that are anything but static: adversaries move through a sequence of tactical stages, and the pace of that progression influences whether an incident ends in containment or catastrophe. This project models that progression as an absorbing Markov chain in R. Six transient states span a kill-chain-style progression from initial phishing delivery through privilege escalation, lateral movement, and domain compromise, ending in one of three absorbing outcomes: contained or terminated, data exfiltration, or enterprise ransomware. The Fundamental Matrix, computed by closed-form inversion of (I − Q), yields expected time to resolution and the probability of each terminal outcome, given the assumed transition matrix and without simulation. Under the illustrative baseline parameters, expected time to resolution falls from 14.2 hours for an attack starting at phishing delivery to 4.2 hours at payload staging, and catastrophic outcomes become more likely than containment at privilege escalation (52.9% versus 47.1%). An illustrative improved posture raises containment from the phishing stage from 72.5% to 97.3% (+24.8 percentage points). The transition probabilities are expert-elicited illustrative values, not calibrated to any cited benchmark or internal telemetry. A Dirichlet parameter-uncertainty analysis and a one-row-at-a-time control sensitivity analysis qualify the point estimates. Operational use would require recalibration against SIEM data and tabletop exercise results."
 author: Patrick Lefler
 date: "2026-08-27"
 format:
@@ -42,103 +42,115 @@ knitr:
 
 ### Introduction
 
-Enterprise cyber defenses have traditionally relied on static checklists and subjective risk heatmaps that fail to capture how adversaries maneuver through complex networks over time. When advanced persistent threats (APTs) or ransomware operators infiltrate an organization, they do not execute a single isolated attack; they navigate a sequential progression of tactical stages—from initial perimeter access to privilege escalation and lateral movement. Traditional security metrics often fail to measure the speed of this progression or the exact likelihood of catastrophic outcomes versus early defensive containment.
+Enterprise cyber defenses have traditionally relied on static checklists and subjective risk heatmaps that do not capture how adversaries maneuver through networks over time. When advanced persistent threats (APTs) or ransomware operators infiltrate an organization, they do not execute a single isolated attack; they work through a sequence of tactical stages, from initial delivery to privilege escalation and lateral movement. Traditional security metrics rarely quantify the speed of this progression or the likelihood of catastrophic outcomes relative to early containment.
 
-This project implements a **Multi-Stage Cyber Attack Graph Simulator using Absorbing Markov Chains in Pure R**. By modeling enterprise IT environments as a network of temporary operational states and permanent absorbing outcomes, we calculate the exact mathematical probability that an attack terminates in defensive containment versus catastrophic data exfiltration or enterprise-wide ransomware. Utilizing the Fundamental Matrix framework, this system computes adversary dwell times and provides corporate boards and risk committees with deterministic metrics to justify cybersecurity capital investments and optimize incident response SLAs.
+This project implements a **multi-stage cyber attack simulator using absorbing Markov chains in R**. The attack is modeled as a set of transient stages and permanent absorbing outcomes. Using the Fundamental Matrix framework, we compute, for an assumed transition matrix, the closed-form probability that an attack ends in containment versus data exfiltration or ransomware, and the expected time to resolution. The goal is to illustrate how such a model can support discussion of detection and response priorities. It is not a validated risk quantification: the inputs are illustrative (see [Parameterization and Assumptions](#parameterization-and-assumptions)).
 
 ```{mermaid}
-
 %%| fig-align: center
-%%{init: {'themeVariables': { 'fontSize': '15px', 'fontFamily': 'sans-serif' }}}%%
+%%{init: {'themeVariables': { 'fontSize': '14px', 'fontFamily': 'sans-serif' }}}%%
 flowchart LR
-    %% Row 1: Transient Kill-Chain Pipeline
     S1["<b>S1: Recon & Phishing</b><br>(Perimeter Delivery)"] --> S2["<b>S2: Initial Foothold</b><br>(Endpoint Breach)"]
     S2 --> S3["<b>S3: Priv Escalation</b><br>(Credential Theft)"]
+    S2 --> S4
     S3 --> S4["<b>S4: Lateral Movement</b><br>(Network Discovery)"]
-    
-    %% Row 2: Deep Staging to Terminal Outcomes
-    S5["<b>S5: Domain Dominance</b><br>(Active Directory)"] --> S6["<b>S6: Payload Staging</b><br>(Arming Assets)"]
-    S6 -.-> ABS["<b>Absorbing Outcomes</b><br>(SOC Win vs Catastrophe)"]
-    ABS --> GOV["<b>Executive Risk Scorecard</b><br>(Dwell Time & CyVaR)"]
+    S3 --> S5
+    S4 --> S3
+    S4 --> S5["<b>S5: Domain Dominance</b><br>(Active Directory)"]
+    S4 --> S6
+    S5 --> S6["<b>S6: Payload Staging</b><br>(Arming Assets)"]
 
-    %% Transition from Row 1 to Row 2
-    S4 --> S5
-    
-    %% Spatial alignments enforcing a balanced 2x4 grid
-    S1 ~~~ S5
-    S2 ~~~ S6
-    S3 ~~~ ABS
-    S4 ~~~ GOV
+    S1 -.-> A1["<b>A1: Contained / Terminated</b>"]
+    S2 -.-> A1
+    S3 -.-> A1
+    S4 -.-> A1
+    S5 -.-> A1
+    S6 -.-> A1
+    S5 -.-> A2["<b>A2: Data Exfiltration</b>"]
+    S5 -.-> A3["<b>A3: Enterprise Ransomware</b>"]
+    S6 -.-> A2
+    S6 -.-> A3
 
     classDef default fill:#f8f9fa,stroke:#0275d8,stroke-width:1.5px;
+    classDef good fill:#e4f4e4,stroke:#5cb85c,stroke-width:1.5px;
     classDef alert fill:#fce4e4,stroke:#d9534f,stroke-width:1.5px;
-    class ABS,GOV alert;
+    class A1 good;
+    class A2,A3 alert;
 ```
+
+*Solid arrows are transitions among transient stages (forward, skip, and the S4 → S3 back-edge); dotted arrows are transitions into absorbing outcomes. Self-loops are omitted for readability.*
 
 ### Mathematical Foundation: The Fundamental Matrix Framework
 
-This section outlines the core mathematics of Markov chain theory used to model sequential cyber attacks. By organizing all possible attack stages into a standardized matrix, the system isolates transient stages (where the attacker is actively maneuvering) from absorbing states (permanent outcomes such as security containment or catastrophic loss). Through closed-form matrix inversion, the model calculates the exact duration an attacker is expected to spend in each network zone and the precise probability of every potential terminal outcome without requiring computationally expensive simulations.
+By organizing all attack states into a standardized matrix, the model separates transient stages (where the attacker is actively maneuvering) from absorbing states (permanent outcomes). Through closed-form matrix inversion, it computes the expected time spent in each stage and the probability of each terminal outcome, conditional on the assumed transition matrix.
 
 #### Canonical Block Form
 
-Let the state space of the enterprise attack graph contain $t$\$t\$\$t\$ transient states and $r$ absorbing states ($n = t + r$). The transition probability matrix $P \in \mathbb{R}^{n \times n}$ is partitioned into canonical block form:
+Let the state space contain $t$ transient states and $r$ absorbing states ($n = t + r$). The transition probability matrix $P \in \mathbb{R}^{n \times n}$ is partitioned into canonical block form:
 
 $$P = \begin{pmatrix} Q & R \\ \mathbf{0} & I_r \end{pmatrix}$$
 
-- $Q \in \mathbb{R}^{t \times t}$: Transition probabilities between transient states.
-- $R \in \mathbb{R}^{t \times r}$: Transition probabilities from transient states into absorbing states.
-- $\mathbf{0} \in \mathbb{R}^{r \times t}$: Zero matrix (absorbing states cannot transition back to transient states).
-- $I_r \in \mathbb{R}^{r \times r}$: Identity matrix of order $r$ (absorbing states are permanent).
+-   $Q \in \mathbb{R}^{t \times t}$: Transition probabilities between transient states.
+-   $R \in \mathbb{R}^{t \times r}$: Transition probabilities from transient states into absorbing states.
+-   $\mathbf{0} \in \mathbb{R}^{r \times t}$: Zero matrix (absorbing states cannot transition back to transient states).
+-   $I_r \in \mathbb{R}^{r \times r}$: Identity matrix of order $r$ (absorbing states are permanent).
 
 ------------------------------------------------------------------------
 
 #### The Fundamental Matrix ($N$)
 
-For an absorbing Markov chain, the matrix $(I_t - Q)$ is strictly invertible. The **Fundamental Matrix** $N \in \mathbb{R}^{t \times t}$ is defined as:
+If every transient state can reach an absorbing state, $(I_t - Q)$ is invertible. The **Fundamental Matrix** $N \in \mathbb{R}^{t \times t}$ is:
 
 $$N = (I_t - Q)^{-1} = I_t + Q + Q^2 + Q^3 + \dots = \sum_{k=0}^{\infty} Q^k$$
 
-Each entry $N_{ij}$ represents the **expected number of time steps** the adversary spends in transient state $j$, given that the attack originated in transient state $i$.
+Each entry $N_{ij}$ is the **expected number of time steps** spent in transient state $j$, given that the attack starts in transient state $i$. Because $N = I + Q + \dots$, the starting step counts: $N_{ii} \ge 1$.
 
 ------------------------------------------------------------------------
 
-#### Expected Time to Absorption ($\mathbf{t}$)
+#### Expected Time to Resolution ($\mathbf{t}$)
 
-The vector of expected total dwell time steps before an attack reaches an absorbing state is given by multiplying $N$ by a column vector of ones $\mathbf{1} \in \mathbb{R}^t$:
+The expected number of steps before the chain is absorbed, from any starting state, is
 
 $$\mathbf{t} = N \mathbf{1} = \sum_{j=1}^t N_{ij}$$
 
-Given a discrete time interval $\Delta \tau$ (e.g., $\Delta \tau = 4\text{ hours}$ per step), the physical **Mean Time to Compromise/Containment (MTTC)** is:
+This is the expected time to **resolution of any kind**, including containment. A shorter time to resolution can mean faster containment (good) or faster detonation (bad), so it is not by itself a measure of adversary dwell. Each stage $j$ has its own mean step duration $h_j$ (hours), giving
 
-$$\text{MTTC}_i = \mathbf{t}_i \times \Delta \tau$$
+$$\mathbf{T} = N \mathbf{h}$$
+
+In this document every $h_j = \Delta\tau = 4$ hours, so $\mathbf{T} = 4\,\mathbf{t}$. The 4-hour step is an assumption, and every time in hours scales linearly with it.
 
 ------------------------------------------------------------------------
 
 #### Absorption Probabilities ($B$)
 
-The matrix $B \in \mathbb{R}^{t \times r}$ defines the exact probability that an attack starting in transient state $i$ ends in absorbing state $k$:
+The matrix $B \in \mathbb{R}^{t \times r}$ gives the probability that an attack starting in transient state $i$ ends in absorbing state $k$:
 
-$$B = N R$$
+$$B = N R, \qquad \sum_{k=1}^r B_{ik} = 1 \;\; \text{for all } i$$
 
-Where $\sum_{k=1}^r B_{ik} = 1$ for all transient states $i \in \{1, \dots, t\}$.
+------------------------------------------------------------------------
+
+#### Conditional Time to Each Outcome
+
+The expected time to resolution, conditional on ending in outcome $k$, has the closed form
+
+$$E[T \mid \text{start } i,\ \text{absorbed in } k] = \frac{\left(N\,(\mathbf{h} \circ B_{\cdot k})\right)_i}{B_{ik}}$$
+
+where $\circ$ is the elementwise product. For a catastrophic outcome, $B_{\cdot k}$ is replaced by $B_{\cdot A2} + B_{\cdot A3}$. This is the time metric that bears on response timelines, because it separates "time until containment" from "time until a catastrophic outcome, given that one occurs."
 
 ------------------------------------------------------------------------
 
 ### R Library Initialization
 
-Only validated statistical computing and visualization packages in R are utulized. This establishes strict reproducibility parameters—such as setting a deterministic seed—ensuring that every matrix inversion, dwell-time calculation, and scenario projection yields consistent, audit-ready results across reporting cycles. It also configures board-level graphic themes to present complex cyber graph dynamics in clear executive formats.
+Only a small set of packages is used. A seed is set because the parameter-uncertainty analysis and the simulation check draw random numbers; the closed-form solver itself is deterministic.
 
 ```{r setup}
-# Core Data Science & Matrix Operations
 library(tidyverse)
 library(scales)
 library(patchwork)
 library(gt)
 
-# Global Seed for Reproducibility
 set.seed(42)
 
-# Executive ggplot2 Styling
 theme_set(
   theme_minimal(base_size = 12) +
     theme(
@@ -148,34 +160,24 @@ theme_set(
       legend.position = "bottom"
     )
 )
+
+pct1 <- function(x) sprintf("%.1f%%", 100 * x)
+pp1 <- function(x) sprintf("%.1f pp", 100 * x)
 ```
 
-#### Attack Graph Topology & Matrix Parameterization
+#### Parameterization and Assumptions {#parameterization-and-assumptions}
 
-The enterprise attack graph is established - mapping six operational kill-chain stages (transient states) and three permanent terminal outcomes (absorbing states). The transient states cover the entire attack lifecycle, from initial phishing delivery to domain compromise, while the absorbing states track whether the incident ends in an early win for the Security Operations Center (SOC) or a catastrophic failure (data exfiltration or ransomware). By establishing baseline transition probabilities, the model provides a foundation for stress-testing defensive controls.
+The model has six transient states (kill-chain-style stages) and three absorbing states (outcomes). **Transition probabilities are expert-elicited, illustrative values.** They are not calibrated to any cited benchmark, and they were typed in by hand: no asset graph, PageRank, CVSS weighting, or loss distribution is computed. Each transient row gives the per-step probability, from a given stage, of staying (self-loop), advancing, regressing, or ending in an absorbing outcome. The baseline and the improved-posture matrices are two hand-set matrices; the improved posture is not derived from any specific control (MFA, EDR, or Zero Trust).
 
-Here is the step-by-step breakdown of how the data was generated and structured:
+Assumptions that the results depend on:
 
-**Synthetic Graph Modeling:** A directed graph ‭$G = (V, E)$‬‭‬‭‬‭‬‭‬ ‭‬‭‬ was generated to represent the enterprise's IT/OT network topology, where vertices (‭$V$‬) represent network assets (e.g., domain controllers, database servers, web applications, endpoints, and IoT devices) and edges (‭$E$‬) represent reachable network paths, access pathways, and service dependencies between those assets.
-
-**Adjacency & Transition Matrices:** The directed connection graph was mapped into an adjacency matrix ‭$A$‬, which was subsequently row- or column-normalized to form the transition probability matrix ‭$M$‬ underlying the Markov chain process.
-PageRank and Criticality Calculation
-
-**Core PageRank Algorithm:** The standard PageRank formulation was applied over the transition matrix with a standard damping factor (‭$d \approx 0.85$‬‭‬):
-
-‭$$PR(u) = \frac{1-d}{\vert{}V\vert{}} + d \sum_{v \in B_u} \frac{PR(v)}{L(v)}$$‬‭‬‭‬‭‬‭‬‭‬‭‬‭‬
-
-where ‭$B_u$‬ is the set of nodes that link to node ‭$u$‬, and ‭$L(v)$‬‭‬‭‬‭‬ is the out-degree of node ‭$v$‬.
-	
-**Personalized / Biased Weighting:** In addition to structural reachability, teleports or personalized vectors (Personalized PageRank) were weighted using simulated asset impact values and intrinsic CVSS (Common Vulnerability Scoring System) base scores to measure cumulative lateral movement risk.
-Data Augmentation & Synthetic Attributes
-
-**Vulnerability & Exploitability Profiles:** Each simulated asset node was assigned generated risk attributes, including synthetic CVE IDs, CVSS v3.1 base metrics, exploitability sub-scores, asset categorization (e.g., Crown Jewels, Perimeter, Internal Workstations), and exploit maturity levels.
-
-**Loss Simulation Parameters:** Financial loss distributions were generated alongside the graph metrics to allow the structural centrality scores to map into quantitative cyber loss distributions.
+-   **Markov property.** "Starting at $S_i$" and "having reached $S_i$" are treated as identical, and the per-step detection hazard is constant. An attacker who reached $S_3$ after 30 hours of slow movement has the same future as one who arrived in 4 hours; real detection probability can build up with time and noise.
+-   **Geometric holding times and a single step length.** Each stage has a geometric holding time, with a step length of $\Delta\tau = 4$ hours for all stages. Real stages differ by orders of magnitude (phishing delivery in minutes, directory reconnaissance in days). Publicly reported median dwell times are on the order of days, so the implied time scale here (a kill chain resolved in under a day) is a hypothetical, not a benchmark.
+-   **S1 is not adversary dwell.** At phishing delivery the adversary is not yet inside the environment, so time spent in S1 is time to resolution, not dwell time in the industry sense.
+-   **Outcome space.** "Contained / Terminated" (A1) includes automated filtering, user non-engagement, abandoned attacks, and SOC action; it should not be read as "SOC wins." A2 and A3 are mutually exclusive here, although double extortion (exfiltrate, then encrypt) is common; "catastrophic" counts only the first catastrophic outcome, and the A2/A3 split is not meaningful by itself.
+-   **Graph structure.** Only S5 and S6 can reach A2/A3, and S6 has no regression edge, so catastrophic probability is largely P(reach S5/S6) times the S5/S6 exit split. The single back-edge S4 → S3 (0.05) is an illustrative attacker-backtracking edge with no empirical basis, kept in both regimes.
 
 ```{r matrix-parameterization}
-# Define State Space
 transient_names <- c(
   "S1: Recon & Phishing",
   "S2: Initial Foothold",
@@ -186,7 +188,7 @@ transient_names <- c(
 )
 
 absorbing_names <- c(
-  "A1: SOC Containment",
+  "A1: Contained / Terminated",
   "A2: Data Exfiltration",
   "A3: Enterprise Ransomware"
 )
@@ -195,103 +197,131 @@ all_state_names <- c(transient_names, absorbing_names)
 t_dim <- length(transient_names)
 r_dim <- length(absorbing_names)
 
-# Define Baseline Unmitigated Transition Matrix P (9x9)
+# Mean step duration per transient stage (hours); 4 h for every stage by assumption
+step_hours <- setNames(rep(4, t_dim), transient_names)
+
+# Baseline transition matrix P (9x9), illustrative values
 # Row order: S1..S6, A1..A3 | Col order: S1..S6, A1..A3
 P_baseline_raw <- matrix(0, nrow = 9, ncol = 9, dimnames = list(all_state_names, all_state_names))
 
-# S1: Recon & Phishing Delivery
-P_baseline_raw["S1: Recon & Phishing", ] <- c(0.10, 0.65, 0.00, 0.00, 0.00, 0.00, 0.25, 0.00, 0.00)
-# S2: Initial Foothold (Endpoint Compromise)
-P_baseline_raw["S2: Initial Foothold", ] <- c(0.00, 0.15, 0.55, 0.05, 0.00, 0.00, 0.25, 0.00, 0.00)
-# S3: Privilege Escalation & Credential Theft
-P_baseline_raw["S3: Privilege Escalation", ] <- c(0.00, 0.00, 0.10, 0.60, 0.10, 0.00, 0.20, 0.00, 0.00)
-# S4: Lateral Movement & Network Discovery
-P_baseline_raw["S4: Lateral Movement", ] <- c(0.00, 0.00, 0.05, 0.15, 0.55, 0.10, 0.15, 0.00, 0.00)
-# S5: Domain Dominance (Active Directory Takeover)
-P_baseline_raw["S5: Domain Dominance", ] <- c(0.00, 0.00, 0.00, 0.00, 0.10, 0.70, 0.10, 0.05, 0.05)
-# S6: Payload Staging & Arming
-P_baseline_raw["S6: Payload Staging", ] <- c(0.00, 0.00, 0.00, 0.00, 0.00, 0.05, 0.10, 0.40, 0.45)
+P_baseline_raw["S1: Recon & Phishing", ]       <- c(0.10, 0.65, 0.00, 0.00, 0.00, 0.00, 0.25, 0.00, 0.00)
+P_baseline_raw["S2: Initial Foothold", ]       <- c(0.00, 0.15, 0.55, 0.05, 0.00, 0.00, 0.25, 0.00, 0.00)
+P_baseline_raw["S3: Privilege Escalation", ]   <- c(0.00, 0.00, 0.10, 0.60, 0.10, 0.00, 0.20, 0.00, 0.00)
+P_baseline_raw["S4: Lateral Movement", ]       <- c(0.00, 0.00, 0.05, 0.15, 0.55, 0.10, 0.15, 0.00, 0.00)
+P_baseline_raw["S5: Domain Dominance", ]       <- c(0.00, 0.00, 0.00, 0.00, 0.10, 0.70, 0.10, 0.05, 0.05)
+P_baseline_raw["S6: Payload Staging", ]        <- c(0.00, 0.00, 0.00, 0.00, 0.00, 0.05, 0.10, 0.40, 0.45)
 
-# Absorbing States (Identity Submatrix)
-P_baseline_raw["A1: SOC Containment", "A1: SOC Containment"] <- 1.00
-P_baseline_raw["A2: Data Exfiltration", "A2: Data Exfiltration"] <- 1.00
-P_baseline_raw["A3: Enterprise Ransomware", "A3: Enterprise Ransomware"] <- 1.00
+P_baseline_raw[absorbing_names, absorbing_names] <- diag(r_dim)
 
-# Verification: Stochastic Rows (Must Sum to Exactly 1.00)
-row_sums <- rowSums(P_baseline_raw)
-stopifnot(all(abs(row_sums - 1.0) < 1e-8))
+# Improved-posture matrix: A1 probabilities rise by 2.0x to 3.5x depending on stage
+P_hardened_raw <- P_baseline_raw
+P_hardened_raw["S1: Recon & Phishing", ]       <- c(0.05, 0.40, 0.00, 0.00, 0.00, 0.00, 0.55, 0.00, 0.00)
+P_hardened_raw["S2: Initial Foothold", ]       <- c(0.00, 0.10, 0.35, 0.05, 0.00, 0.00, 0.50, 0.00, 0.00)
+P_hardened_raw["S3: Privilege Escalation", ]   <- c(0.00, 0.00, 0.05, 0.40, 0.05, 0.00, 0.50, 0.00, 0.00)
+P_hardened_raw["S4: Lateral Movement", ]       <- c(0.00, 0.00, 0.02, 0.10, 0.40, 0.08, 0.40, 0.00, 0.00)
+P_hardened_raw["S5: Domain Dominance", ]       <- c(0.00, 0.00, 0.00, 0.00, 0.05, 0.50, 0.35, 0.05, 0.05)
+P_hardened_raw["S6: Payload Staging", ]        <- c(0.00, 0.00, 0.00, 0.00, 0.00, 0.05, 0.35, 0.30, 0.30)
 
-# Extract Q (6x6) and R (6x3)
+# Every row must be a probability distribution
+stopifnot(all(abs(rowSums(P_baseline_raw) - 1) < 1e-8))
+stopifnot(all(abs(rowSums(P_hardened_raw) - 1) < 1e-8))
+
 Q_base <- P_baseline_raw[1:t_dim, 1:t_dim]
 R_base <- P_baseline_raw[1:t_dim, (t_dim + 1):(t_dim + r_dim)]
-
-```
-
-
-
-
-### Pure R Algebraic Solver: Fundamental Matrix & Dwell Times
-
-This engine performs closed-form matrix algebra in pure R to calculate adversary dwell times and ultimate breach probabilities. By computing the Fundamental Matrix $(I - Q)^{-1}$, the engine determines the expected duration an attacker remains within each security layer before being stopped or completing their objective. In addition to analyzing the baseline unmitigated environment, the module evaluates a hardened defensive posture—simulating the impact of advanced controls like Multi-Factor Authentication and endpoint containment to demonstrate risk reduction.
-
-```{r algebraic-solver}
-# Core Algebraic Solver Function for Absorbing Chains
-solve_absorbing_markov <- function(Q, R, step_hours = 4) {
-  I_t <- diag(nrow(Q))
-  rownames(I_t) <- rownames(Q)
-  colnames(I_t) <- colnames(Q)
-  
-  # Fundamental Matrix: N = (I - Q)^(-1)
-  N <- solve(I_t - Q)
-  
-  # Expected Time Steps to Absorption: t = N * 1
-  dwell_steps <- rowSums(N)
-  dwell_hours <- dwell_steps * step_hours
-  
-  # Absorption Probabilities: B = N * R
-  B <- N %*% R
-  
-  list(N = N, dwell_steps = dwell_steps, dwell_hours = dwell_hours, B = B)
-}
-
-# 1. Solve Baseline Unmitigated Architecture
-base_solution <- solve_absorbing_markov(Q_base, R_base, step_hours = 4)
-
-# 2. Parameterize Hardened Architecture (EDR, Zero Trust & Tiered MFA)
-# Simulating a 50% uplift in SOC interception capabilities across transient stages
-P_hardened_raw <- P_baseline_raw
-P_hardened_raw["S1: Recon & Phishing", ]     <- c(0.05, 0.40, 0.00, 0.00, 0.00, 0.00, 0.55, 0.00, 0.00)
-P_hardened_raw["S2: Initial Foothold", ]     <- c(0.00, 0.10, 0.35, 0.05, 0.00, 0.00, 0.50, 0.00, 0.00)
-P_hardened_raw["S3: Privilege Escalation", ] <- c(0.00, 0.00, 0.05, 0.40, 0.05, 0.00, 0.50, 0.00, 0.00)
-P_hardened_raw["S4: Lateral Movement", ]     <- c(0.00, 0.00, 0.02, 0.10, 0.40, 0.08, 0.40, 0.00, 0.00)
-P_hardened_raw["S5: Domain Dominance", ]     <- c(0.00, 0.00, 0.00, 0.00, 0.05, 0.50, 0.35, 0.05, 0.05)
-P_hardened_raw["S6: Payload Staging", ]      <- c(0.00, 0.00, 0.00, 0.00, 0.00, 0.05, 0.35, 0.30, 0.30)
-
 Q_hard <- P_hardened_raw[1:t_dim, 1:t_dim]
 R_hard <- P_hardened_raw[1:t_dim, (t_dim + 1):(t_dim + r_dim)]
+```
 
-hard_solution <- solve_absorbing_markov(Q_hard, R_hard, step_hours = 4)
+### Pure R Algebraic Solver: Fundamental Matrix & Time to Resolution
+
+The solver computes $N$, expected time to resolution, absorption probabilities, and conditional times to each outcome. Before inverting, it checks that every transient state can reach an absorbing state (which guarantees $I - Q$ is invertible) and, after computing $B$, that every row of $B$ sums to 1.
+
+```{r algebraic-solver}
+# TRUE if every transient state has a path to an absorbing state
+all_reach_absorbing <- function(Q, R) {
+  reach <- rowSums(R) > 0
+  repeat {
+    updated <- reach | as.vector((Q > 0) %*% reach) > 0
+    if (identical(updated, reach)) break
+    reach <- updated
+  }
+  all(reach)
+}
+
+solve_absorbing_markov <- function(Q, R, h) {
+  stopifnot(all_reach_absorbing(Q, R))
+
+  N <- solve(diag(nrow(Q)) - Q, tol = 1e-14)
+  dimnames(N) <- dimnames(Q)
+
+  B <- N %*% R
+  stopifnot(all(abs(rowSums(B) - 1) < 1e-8))
+
+  # Conditional expected time to each outcome: N (h * B_k) / B_k
+  time_given_outcome <- apply(B, 2, \(b) as.vector(N %*% (h * b)) / b)
+  rownames(time_given_outcome) <- rownames(Q)
+
+  cat_prob <- B[, 2] + B[, 3]
+  time_given_catastrophe <- as.vector(N %*% (h * cat_prob)) / cat_prob
+
+  list(
+    N = N,
+    B = B,
+    steps = rowSums(N),
+    hours = as.vector(N %*% h) |> setNames(rownames(Q)),
+    time_given_outcome = time_given_outcome,
+    time_given_catastrophe = setNames(time_given_catastrophe, rownames(Q))
+  )
+}
+
+base_solution <- solve_absorbing_markov(Q_base, R_base, step_hours)
+hard_solution <- solve_absorbing_markov(Q_hard, R_hard, step_hours)
+```
+
+```{r key-values}
+# One row per starting stage; all prose numbers below are drawn from this table
+res <- tibble(
+  stage = transient_names,
+  steps_b = base_solution$steps,
+  hours_b = base_solution$hours,
+  hours_h = hard_solution$hours,
+  cont_b = base_solution$B[, 1],
+  cont_h = hard_solution$B[, 1],
+  cat_b = base_solution$B[, 2] + base_solution$B[, 3],
+  cat_h = hard_solution$B[, 2] + hard_solution$B[, 3],
+  uplift = cont_h - cont_b,
+  t_cont_b = base_solution$time_given_outcome[, 1],
+  t_cat_b = base_solution$time_given_catastrophe
+)
+
+# First stage where catastrophic outcomes are more likely than containment
+cross_stage <- which(res$cat_b > res$cont_b)[1]
+
+# The abstract is static YAML, so verify it matches the model
+stopifnot(
+  round(res$hours_b[1], 1) == 14.2, round(res$hours_b[6], 1) == 4.2,
+  round(100 * res$cat_b[3], 1) == 52.9, round(100 * res$cont_b[3], 1) == 47.1,
+  round(100 * res$cont_b[1], 1) == 72.5, round(100 * res$cont_h[1], 1) == 97.3,
+  round(100 * res$uplift[1], 1) == 24.8, cross_stage == 3
+)
 ```
 
 ------------------------------------------------------------------------
 
 ### Diagnostic Visualizations & Attack Frontiers
 
-The four dianostic plots below help visualize the multi-stage attack dynamics through four plots. They present the routing density of the transition matrix, the expected adversary dwell time across each operational plane, the cumulative race between SOC containment and catastrophic business disruption, and the reduction in breach probability achieved through defensive investments.
+The diagnostic plots below show the routing structure of the transition matrix, the expected time to resolution from each starting stage, the conditional time to each outcome, the baseline absorption probabilities, and the change in catastrophic probability under the improved posture.
 
 ------------------------------------------------------------------------
 
 #### The Transition Probability Matrix (P) plot
 
-The Transition Probability Matrix (P) plot shows the main paths an intrusion can take, giving leaders a clear map of how operational risk moves through each stage of an attack. This helps reveal hidden weak spots and pinpoints where defenses can stop an attacker’s progress.
-
-The matrix visually proves that defensive leverage lives upstream. In the early stages (‭$S_1$‬ and ‭$S_2$‬), the organization has a ‭$25\%$‬‭‬ chance per step of stopping the incident cold. By stage ‭$S_6$‬, containment drops to ‭$10\%$‬‭‬, and catastrophic business interruption becomes the overwhelming default (‭$85\%$‬‭‬). This mathematical progression makes the case for investing in automated containment and identity controls that break the chain before an adversary ever leaves stage ‭$S_2$‬.
+The heatmap shows the main paths an intrusion can take under the assumed parameters and where the per-step exit probabilities sit.
 
 ```{r transition-probability-matrix-plot}
-# Panel A: Transition Probability Heatmap (Q and R Submatrices)
-matrix_df <- as.data.frame(P_baseline_raw) %>%
-  rownames_to_column(var = "From_State") %>%
-  pivot_longer(cols = -From_State, names_to = "To_State", values_to = "Probability") %>%
+matrix_df <- as.data.frame(P_baseline_raw) |>
+  rownames_to_column(var = "From_State") |>
+  pivot_longer(cols = -From_State, names_to = "To_State", values_to = "Probability") |>
   mutate(
     From_State = factor(From_State, levels = rev(all_state_names)),
     To_State = factor(To_State, levels = all_state_names)
@@ -302,8 +332,8 @@ p1_heatmap <- ggplot(matrix_df, aes(x = To_State, y = From_State, fill = Probabi
   geom_text(aes(label = ifelse(Probability > 0, sprintf("%.2f", Probability), "")), size = 3.2) +
   scale_fill_gradient(low = "#f8f9fa", high = "#d9534f", limits = c(0, 1), name = "P(Transition)") +
   labs(
-    title = "MITRE ATT&CK Transition Probability Matrix (P)",
-    subtitle = "Canonical Block Routing Densities Across Transient & Absorbing States",
+    title = "Kill-Chain Transition Probability Matrix (P)",
+    subtitle = "Illustrative baseline: routing densities across transient and absorbing states",
     x = "Target State (t + 1)",
     y = "Origin State (t)"
   ) +
@@ -311,213 +341,427 @@ p1_heatmap <- ggplot(matrix_df, aes(x = To_State, y = From_State, fill = Probabi
         axis.text.y = element_text(size = 8.5))
 
 p1_heatmap
-
 ```
-**How to understand the workflow of the MITRE ATT&CK Transition Probability Matrix (P) plot**
 
-The matrix functions like a flight board for a cyber intrusion, tracking where an attacker currently is on the vertical axis (Origin State) and mapping the exact probability of where they can move in their next step on the horizontal axis (Target State).
+**How to read the plot**
 
-Every row adds up to ‭$1.00$‬ (‭$100\%$‬‭‬), accounting for every possible next move. The darker red the box, the higher the likelihood of that transition occurring.
+The matrix works like a flight board: the vertical axis is where the attacker currently is (origin state) and the horizontal axis is where they can move in the next step (target state). Every row sums to 1.00. The darker the red, the higher the transition probability.
 
-How to Read the Flow
+1.  **Transient stages ($S_1$ to $S_6$).** These are temporary phases in which the adversary is actively maneuvering. The diagonal holds the small self-loops (`r sprintf("%.2f", min(diag(Q_base)))` to `r sprintf("%.2f", max(diag(Q_base)))`); the forward momentum sits on the **super-diagonal**.
+2.  **Absorbing outcomes ($A_1$ to $A_3$).** Once the chain reaches one of these columns the incident is over. $A_1$ is contained or terminated (SOC action, automated filtering, user non-engagement, or an abandoned attack); $A_2$ is data exfiltration; $A_3$ is enterprise ransomware.
+3.  **The bottom-right block.** $A_1$, $A_2$, and $A_3$ each have 1.00 on the diagonal and zeros elsewhere: these are absorbing states, and an ended incident does not return to earlier stages.
 
-1.	The In-Progress Attack Stages (‭$S_1$‬ through ‭$S_6$‬): These are temporary phases where the adversary is actively maneuvering inside the network. Notice the heavy red band cutting down the diagonal: once an attack begins, the attacker has strong forward momentum moving from one step to the next deeper tier.
-	
-2.	The Exit Points / Permanent Outcomes (‭$A_1$‬ through ‭$A_3$‬): Once an intrusion reaches one of these three columns, the incident is over:
-•	‭$A_1$‬: SOC Containment: The defensive win—our Security Operations Center intercepts and neutralizes the threat before catastrophic damage occurs.
-•	‭$A_2$‬: Data Exfiltration: The attacker successfully steals confidential corporate or customer records.
-•	‭$A_3$‬: Enterprise Ransomware: The attacker detonates malware, encrypting servers and shutting down business operations.
-	
-3.	The Bottom Right (‭$1.00$‬ Values): Notice that ‭$A_1$‬, ‭$A_2$‬, and ‭$A_3$‬ have a ‭$1.00$‬ (‭$100\%$‬‭‬) where they intersect themselves and zero everywhere else. In mathematics, these are "absorbing" states—once an attack is contained or detonates, it cannot loop back into earlier stages.
+**How to interpret the results**
 
----
+**Directional momentum.** The super-diagonal carries the largest transient-to-transient probabilities (`r sprintf("%.2f", P_baseline_raw[1, 2])` from S1 to S2, `r sprintf("%.2f", P_baseline_raw[2, 3])` S2 to S3, `r sprintf("%.2f", P_baseline_raw[3, 4])` S3 to S4, `r sprintf("%.2f", P_baseline_raw[4, 5])` S4 to S5, `r sprintf("%.2f", P_baseline_raw[5, 6])` S5 to S6), so under these parameters an attack that is not stopped keeps advancing.
 
-**How to interpret the results of the MITRE ATT&CK Transition Probability Matrix (P) plot**
-
-**Directional Kill-Chain Momentum:** The heavy concentration of probability density along the diagonal progression (e.g., 0.65 from S1 to S2, 0.55 from S2 to S3, 0.60 from S3 to S4, and 0.70 from S5 to S6) demonstrates that modern attacks exhibit strong forward momentum once an initial breach occurs.
-
-**Early-Stage Containment Opportunities:** In the early tiers (S1 and S2), the model shows a 0.25 probability of direct transition to A1: SOC Containment, which steadily degrades to 0.10 by S5 and S6, proving that defensive leverage is highest at the perimeter and endpoint levels.
-
-**Terminal Absorption Choke Points:** Once an adversary reaches S6: Payload Staging, the probabilities of catastrophic terminal outcomes surge to 0.40 for A2: Data Exfiltration and 0.45 for A3: Enterprise Ransomware, highlighting S6 as the critical point of irreversible business impact.
+**Per-step exit probabilities to A1.** The per-step probability of ending in $A_1$ is `r sprintf("%.2f", P_baseline_raw[1, 7])` at S1 and `r sprintf("%.2f", P_baseline_raw[2, 7])` at S2, and falls to `r sprintf("%.2f", P_baseline_raw[6, 7])` at S6, where the per-step catastrophic probability is `r sprintf("%.2f", P_baseline_raw[6, 8] + P_baseline_raw[6, 9])`. These are assumed inputs, not findings, so they cannot by themselves show where defensive investment pays off most; the one-row-at-a-time analysis [below](#one-row-at-a-time-control-sensitivity) addresses that question.
 
 ------------------------------------------------------------------------
 
-#### The Adversary Mean Dwell Time to Absorption Plot
+#### The Expected Time to Resolution Plot
 
-The Adversary Mean Dwell Time to Absorption plot quantifies the operational runway available to defenders by measuring the exact time remaining before an incident reaches a permanent conclusion. It is essential for establishing realistic Security Operations Center (SOC) detection and response SLAs based on the entry point of an intrusion.
+The expected time to resolution is the expected time until the incident ends in any outcome, including containment. It is not adversary dwell time: a shorter value can reflect faster containment or faster detonation.
 
-```{r expected-adversary-dwell-time-plot}
-
-# Panel B: Expected Adversary Dwell Time
-dwell_df <- tibble(
-  Origin_State = transient_names,
-  Baseline_Hours = base_solution$dwell_hours,
-  Hardened_Hours = hard_solution$dwell_hours
-) %>%
-  pivot_longer(cols = ends_with("Hours"), names_to = "Architecture", values_to = "Hours") %>%
-  mutate(Architecture = ifelse(Architecture == "Baseline_Hours", "Baseline (Unmitigated)", "Hardened (EDR + Zero Trust)"))
+```{r expected-time-to-resolution-plot}
+dwell_df <- res |>
+  select(Origin_State = stage, Baseline = hours_b, Improved = hours_h) |>
+  pivot_longer(cols = c(Baseline, Improved), names_to = "Architecture", values_to = "Hours") |>
+  mutate(
+    Origin_State = factor(Origin_State, levels = transient_names),
+    Architecture = recode(Architecture,
+      Baseline = "Baseline (illustrative)",
+      Improved = "Improved posture (illustrative)"
+    )
+  )
 
 p2_dwell <- ggplot(dwell_df, aes(x = Origin_State, y = Hours, fill = Architecture)) +
-  geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
   geom_text(aes(label = sprintf("%.1fh", Hours)), position = position_dodge(width = 0.8), vjust = -0.4, size = 3) +
-  scale_fill_manual(values = c("Baseline (Unmitigated)" = "#d9534f", "Hardened (EDR + Zero Trust)" = "#0275d8")) +
+  scale_fill_manual(values = c("Baseline (illustrative)" = "#d9534f", "Improved posture (illustrative)" = "#0275d8")) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
   labs(
-    title = "Adversary Mean Dwell Time to Absorption",
-    subtitle = "Total Expected Dwell Hours from Initial Breach Point to Terminal State",
+    title = "Expected Time to Resolution",
+    subtitle = "Expected steps to any terminal outcome from each starting stage, times an assumed 4-hour step",
     x = "Attack Origin State",
     y = "Expected Hours (4h / Step)"
   ) +
   theme(axis.text.x = element_text(angle = 35, hjust = 1, size = 8.5))
 
 p2_dwell
-
 ```
 
-**How to interpret the results of the Adversary Mean Dwell Time to Absorption plot**
+**How to interpret the results**
 
-**Shrinking Incident Response Windows:** Under the baseline architecture (red bars), total expected dwell time drops steadily from 14.2 hours at S1: Recon & Phishing down to 4.2 hours at S6: Payload Staging, leaving security teams with an increasingly narrow window to intervene as an intrusion matures.
+**Time to resolution shortens with depth.** Under the baseline, expected time to resolution falls from `r sprintf("%.1f", res$steps_b[1])` steps (`r sprintf("%.1f", res$hours_b[1])` hours) for an attack starting at S1 to `r sprintf("%.1f", res$steps_b[6])` steps (`r sprintf("%.1f", res$hours_b[6])` hours) at S6. Part of this is mechanical, since there are fewer stages left to traverse; part is outcome mix.
 
-**Aggressive Dwell-Time Compression via Hardening:** Implementing hardened controls (blue bars) cuts the adversary's dwell time in the critical early stages (S1 through S3) from \~13–14 hours down to \~7.6–7.9 hours, forcing earlier resolution before threats can entrench themselves.
+**The improved posture shortens it mainly through earlier containment.** From S1 through S3 the improved posture lowers the expected time to resolution from `r sprintf("%.1f", min(res$hours_b[1:3]))`–`r sprintf("%.1f", max(res$hours_b[1:3]))` hours to `r sprintf("%.1f", min(res$hours_h[1:3]))`–`r sprintf("%.1f", max(res$hours_h[1:3]))` hours, but the plot cannot separate faster containment (good) from faster detonation (bad); the conditional times below can.
 
-**Convergence at Deep Stages:** At S6: Payload Staging, both baseline and hardened dwell times converge at 4.2 hours, underscoring that defensive hardening must disrupt adversary operations upstream, because late-stage execution happens too quickly for manual intervention.
+**The S6 values are identical by construction.** The baseline and improved S6 rows share the same self-loop (0.05), so S6 shows `r sprintf("%.1f", res$hours_b[6])` hours in both regimes. This is a parameter choice, not a finding about late-stage defense.
+
+------------------------------------------------------------------------
+
+#### Conditional Time to Containment versus Time to a Catastrophic Outcome
+
+```{r conditional-time-plot}
+cond_df <- bind_rows(
+  tibble(Regime = "Baseline", Origin_State = transient_names,
+         Contained = base_solution$time_given_outcome[, 1],
+         Catastrophic = base_solution$time_given_catastrophe),
+  tibble(Regime = "Improved posture", Origin_State = transient_names,
+         Contained = hard_solution$time_given_outcome[, 1],
+         Catastrophic = hard_solution$time_given_catastrophe)
+) |>
+  pivot_longer(cols = c(Contained, Catastrophic), names_to = "Outcome", values_to = "Hours") |>
+  mutate(
+    Origin_State = factor(Origin_State, levels = transient_names),
+    Regime = factor(Regime, levels = c("Baseline", "Improved posture"))
+  )
+
+p_cond <- ggplot(cond_df, aes(x = Origin_State, y = Hours, fill = Outcome)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = sprintf("%.1fh", Hours)), position = position_dodge(width = 0.8), vjust = -0.4, size = 2.8) +
+  facet_wrap(~Regime) +
+  scale_fill_manual(values = c(Contained = "#5cb85c", Catastrophic = "#d9534f")) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(
+    title = "Expected Time to Outcome, Conditional on That Outcome",
+    subtitle = "E[T | start i, absorbed in outcome], assuming a 4-hour step",
+    x = "Attack Origin State",
+    y = "Expected Hours"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
+
+p_cond
+```
+
+**How to interpret the results.** Conditional on ending in a catastrophic outcome, the baseline expected time to that outcome is `r sprintf("%.1f", res$t_cat_b[1])` hours from S1, versus `r sprintf("%.1f", res$t_cont_b[1])` hours to containment. The metric that bears on a response timeline is the first: under these assumptions, an attack that starts at phishing delivery and goes on to a catastrophic outcome takes about `r sprintf("%.0f", res$t_cat_b[1])` hours to get there. This figure scales linearly with the assumed 4-hour step and rests on the memoryless assumption.
 
 ------------------------------------------------------------------------
 
 #### The Baseline Terminal Absorption Frontier Plot
 
-The Baseline Terminal Absorption Frontier plot illustrates the progressive decay of defensive control by decomposing the ultimate fate of an attack across varying depths of network penetration. It provides the board with clear visibility into the exact threshold where an incident transitions from a manageable event to an unavoidable catastrophic outcome.
+The plot decomposes the final outcome of an attack by starting stage, under the baseline parameters.
 
 ```{r terminal-absorption-probability-frontier-plot}
-
-# Panel C: Terminal Absorption Probability Frontier
-absorb_df <- as.data.frame(base_solution$B) %>%
-  rownames_to_column(var = "Origin_State") %>%
-  pivot_longer(cols = -Origin_State, names_to = "Absorbing_Outcome", values_to = "Probability") %>%
+absorb_df <- as.data.frame(base_solution$B) |>
+  rownames_to_column(var = "Origin_State") |>
+  pivot_longer(cols = -Origin_State, names_to = "Absorbing_Outcome", values_to = "Probability") |>
   mutate(
     Origin_State = factor(Origin_State, levels = transient_names),
     Absorbing_Outcome = factor(Absorbing_Outcome, levels = absorbing_names)
   )
 
 p3_frontier <- ggplot(absorb_df, aes(x = Origin_State, y = Probability, fill = Absorbing_Outcome)) +
-  geom_bar(stat = "identity", width = 0.7) +
-  geom_text(aes(label = sprintf("%.1f%%", Probability * 100)), 
+  geom_col(width = 0.7) +
+  geom_text(aes(label = sprintf("%.1f%%", Probability * 100)),
             position = position_stack(vjust = 0.5), size = 3.2, color = "white", fontface = "bold") +
   scale_fill_manual(
-    values = c("A1: SOC Containment" = "#5cb85c", "A2: Data Exfiltration" = "#f0ad4e", "A3: Enterprise Ransomware" = "#d9534f")
+    values = setNames(c("#5cb85c", "#f0ad4e", "#d9534f"), absorbing_names)
   ) +
   scale_y_continuous(labels = percent_format()) +
   labs(
     title = "Baseline Terminal Absorption Frontier",
-    subtitle = "Decomposition of Final Incident Outcomes by Breach Entry Stage",
+    subtitle = "Decomposition of final incident outcomes by starting stage (illustrative parameters)",
     x = "Attack Origin State",
     y = "Absorption Probability (%)",
     fill = "Terminal State"
   ) +
   theme(axis.text.x = element_text(angle = 35, hjust = 1, size = 8.5))
 
-p3_frontier 
-
+p3_frontier
 ```
 
-**How to interpret the results of the Baseline Terminal Absorption Frontier plot**
+**How to interpret the results**
 
-**The Tipping Point at Privilege Escalation:** Across the baseline lifecycle, the probability of successful SOC Containment (green) collapses from 72.5% at S1 to 47.1% at S3: Privilege Escalation, marking the exact stage where the balance shifts from a likely defensive win to a probable breach.
+**Containment declines with depth.** Under the baseline parameters, the probability of ending in $A_1$ falls from `r pct1(res$cont_b[1])` for an attack starting at S1 to `r pct1(res$cont_b[3])` at S3, where catastrophic outcomes (`r pct1(res$cat_b[3])`) first become more likely than containment. This crossing follows directly from the hand-set S2 and S3 rows; the uncertainty analysis [below](#parameter-uncertainty-dirichlet) shows how stable it is.
 
-**Rapid Escalation to Severe Disruption:** Combined catastrophic loss (A2: Data Exfiltration in yellow plus A3: Enterprise Ransomware in red) grows from 27.5% at S1 to 80.7% at S5: Domain Dominance, peaking at 89.5% by S6: Payload Staging.
+**Catastrophic probability rises steeply.** Combined catastrophic probability (A2 plus A3) grows from `r pct1(res$cat_b[1])` at S1 to `r pct1(res$cat_b[5])` at S5 and `r pct1(res$cat_b[6])` at S6.
 
-**Balanced Dual-Threat Exposure:** In the late attack stages (S5 and S6), catastrophic outcomes divide relatively evenly between exfiltration (38.3%–42.1%) and ransomware (42.4%–47.4%), confirming that late-stage defenses must mitigate both regulatory data loss and operational business interruption simultaneously.
+**The A2/A3 split should not be over-read.** At S5 and S6 the split is roughly even (A2 `r pct1(base_solution$B[5, 2])`–`r pct1(base_solution$B[6, 2])`, A3 `r pct1(base_solution$B[5, 3])`–`r pct1(base_solution$B[6, 3])`), but A2 and A3 are modeled as mutually exclusive, whereas double extortion is common in practice. In the improved-posture matrix, A2 equals A3 at S5 and S6 because the two columns were assigned identical values, which shows the split is a parameter choice.
 
 ------------------------------------------------------------------------
 
-#### The Catastrophic Breach Risk Mitigation Frontier Plot
+#### The Catastrophic Breach Risk Under an Improved Posture
 
-The Catastrophic Breach Risk Mitigation Frontier plot visually proves the defensive return on investment by contrasting unmitigated baseline loss exposure directly against a hardened security posture. It serves as the primary decision-making tool for executives to justify capital allocation toward advanced controls like Zero Trust and automated endpoint isolation.
+The plot contrasts baseline catastrophic probability with the illustrative improved posture. The improved-posture matrix changes **all six rows at once**, so differences across starting stages reflect where the attacker begins, not where a control is applied.
 
 ```{r risk-reduction-frontier-plot}
-
-# Panel D: Risk Reduction Frontier (Containment Uplift)
-comparison_df <- tibble(
-  Origin_State = factor(transient_names, levels = transient_names),
-  Baseline_Catastrophic = (base_solution$B[, "A2: Data Exfiltration"] + base_solution$B[, "A3: Enterprise Ransomware"]) * 100,
-  Hardened_Catastrophic = (hard_solution$B[, "A2: Data Exfiltration"] + hard_solution$B[, "A3: Enterprise Ransomware"]) * 100
-) %>%
-  mutate(Risk_Reduction = Baseline_Catastrophic - Hardened_Catastrophic)
+comparison_df <- res |>
+  transmute(
+    Origin_State = factor(stage, levels = transient_names),
+    Baseline_Catastrophic = cat_b * 100,
+    Hardened_Catastrophic = cat_h * 100
+  )
 
 p4_reduction <- ggplot(comparison_df, aes(x = Origin_State)) +
-  geom_segment(aes(x = Origin_State, xend = Origin_State, y = Hardened_Catastrophic, yend = Baseline_Catastrophic), 
+  geom_segment(aes(xend = Origin_State, y = Hardened_Catastrophic, yend = Baseline_Catastrophic),
                color = "gray60", linewidth = 1) +
-  geom_point(aes(y = Baseline_Catastrophic, color = "Baseline Risk"), size = 3.5) +
-  geom_point(aes(y = Hardened_Catastrophic, color = "Hardened Risk"), size = 3.5) +
-  scale_color_manual(values = c("Baseline Risk" = "#d9534f", "Hardened Risk" = "#0275d8"), name = "Posture") +
+  geom_point(aes(y = Baseline_Catastrophic, color = "Baseline"), size = 3.5) +
+  geom_point(aes(y = Hardened_Catastrophic, color = "Improved posture"), size = 3.5) +
+  scale_color_manual(values = c("Baseline" = "#d9534f", "Improved posture" = "#0275d8"), name = "Posture") +
   scale_y_continuous(labels = function(x) paste0(x, "%")) +
   labs(
-    title = "Catastrophic Breach Risk Mitigation Frontier",
-    subtitle = "Probability of Terminal Ransomware or Exfiltration Pre- vs. Post-Control Uplift",
+    title = "Catastrophic Breach Probability: Baseline vs. Improved Posture",
+    subtitle = "Probability of terminal ransomware or exfiltration, by starting stage (illustrative parameters)",
     x = "Attack Origin State",
     y = "Combined Catastrophic Probability (%)"
   ) +
   theme(axis.text.x = element_text(angle = 35, hjust = 1, size = 8.5))
 
 p4_reduction
-
 ```
 
-**How to interpret the results of the Catastrophic Breach Risk Mitigation Frontier plot**
+**How to interpret the results**
 
-**Substantial Risk Reduction Across All Stages:** Across every kill-chain stage, the hardened posture (blue dots) produces a notable downward shift in combined catastrophic probability compared to the unmitigated baseline (red dots).
+**Lower catastrophic probability at every stage.** By construction, the improved posture (blue) lowers combined catastrophic probability relative to the baseline (red) from every starting stage.
 
-**Maximum Dollar-for-Dollar Control Uplift in Intermediate Tiers:** The largest absolute risk reductions occur between S2: Initial Foothold (dropping from 38.1% to 6.5%) and S4: Lateral Movement (dropping from 65.9% to 25.4%), demonstrating that investments in Zero Trust and micro-segmentation yield the greatest risk compression.
+**Where the absolute reductions are largest.** The reductions in catastrophic probability are `r paste0(sprintf("%.1f", 100 * (res$cat_b - res$cat_h)), collapse = ", ")` percentage points for S1 through S6. The largest absolute reductions occur at **`r transient_names[order(res$cat_b - res$cat_h, decreasing = TRUE)[1]]`** and **`r transient_names[order(res$cat_b - res$cat_h, decreasing = TRUE)[2]]`**.
 
-**Perimeter Risk Compression to Near-Zero:** For attacks originating at S1: Recon & Phishing, the hardened control regime reduces catastrophic breach probability from 27.5% down to 2.7%, validating the strategic business case for automated email filtering, EDR, and tiered credential defenses.
+**Why S1 shows the lowest residual risk.** From S1 the catastrophic probability falls from `r pct1(res$cat_b[1])` to `r pct1(res$cat_h[1])`, versus `r pct1(res$cat_b[6])` to `r pct1(res$cat_h[6])` from S6. This is guaranteed by the setup: an attacker starting at S1 passes through all six hardened rows, one starting at S6 only through the last. It is not evidence that upstream investment has greater leverage. The next section tests that question directly.
 
 ------------------------------------------------------------------------
 
-### Enterprise Cyber Governance Scorecard
+### One-Row-at-a-Time Control Sensitivity {#one-row-at-a-time-control-sensitivity}
 
-This governance section converts the underlying Markov matrix operations into board-level risk indicators. The summary scorecard details containment likelihood, catastrophic breach probabilities, and expected dwell times from each entry point. By establishing explicit defensive directives, this framework provides leadership with clear criteria for automating security response actions and allocating capital to high-risk control points.
+To ask where a control change has the most leverage, the comparison must change **one row at a time** and hold the starting stage fixed. Starting from S1 (so every row lies on the attacker's path), the analysis applies two changes to each row separately: (a) a standardized shift of 0.05 of probability from the row's largest non-self, non-A1 edge to A1, and (b) replacing that row with its improved-posture row.
 
-```{r governance-scorecard}
-# Construct Executive Summary Scorecard
-scorecard_table <- tibble(
-  Kill_Chain_Stage = transient_names,
-  Baseline_Dwell_Hours = base_solution$dwell_hours,
-  Baseline_Containment_Pct = base_solution$B[, "A1: SOC Containment"] * 100,
-  Baseline_Catastrophic_Pct = (base_solution$B[, "A2: Data Exfiltration"] + base_solution$B[, "A3: Enterprise Ransomware"]) * 100,
-  Hardened_Containment_Pct = hard_solution$B[, "A1: SOC Containment"] * 100,
-  Hardened_Catastrophic_Pct = (hard_solution$B[, "A2: Data Exfiltration"] + hard_solution$B[, "A3: Enterprise Ransomware"]) * 100,
-  Absolute_Risk_Delta = (base_solution$B[, "A1: SOC Containment"] - hard_solution$B[, "A1: SOC Containment"]) * -100
+```{r one-row-sensitivity}
+harden_one_row <- function(P, i, delta = 0.05) {
+  donor <- unname(which.max(replace(P[i, ], c(i, 7), 0)))
+  P[i, donor] <- P[i, donor] - delta
+  P[i, 7] <- P[i, 7] + delta
+  list(P = P, donor = all_state_names[donor])
+}
+
+outcomes_from_s1 <- function(P) {
+  B <- solve_absorbing_markov(P[1:t_dim, 1:t_dim], P[1:t_dim, 7:9], step_hours)$B
+  c(cont = B[1, 1], cat = B[1, 2] + B[1, 3])
+}
+
+base_s1 <- outcomes_from_s1(P_baseline_raw)
+
+sens_df <- map(seq_len(t_dim), \(i) {
+  shifted <- harden_one_row(P_baseline_raw, i)
+  full_row <- P_baseline_raw
+  full_row[i, ] <- P_hardened_raw[i, ]
+
+  tibble(
+    Stage = transient_names[i],
+    Donor_Edge = str_extract(shifted$donor, "^[SA][0-9]"),
+    Shift_Cont = outcomes_from_s1(shifted$P)["cont"] - base_s1["cont"],
+    Shift_Cat = outcomes_from_s1(shifted$P)["cat"] - base_s1["cat"],
+    Row_Cont = outcomes_from_s1(full_row)["cont"] - base_s1["cont"],
+    Row_Cat = outcomes_from_s1(full_row)["cat"] - base_s1["cat"]
+  )
+}) |>
+  list_rbind()
+
+sens_df |>
+  gt() |>
+  tab_header(
+    title = "One-Row-at-a-Time Control Sensitivity (Attack Starting at S1)",
+    subtitle = "Change in outcome probabilities from S1 when only one stage's row is changed"
+  ) |>
+  cols_label(
+    Stage = "Row changed",
+    Donor_Edge = "Donor edge (0.05 moved to A1)",
+    Shift_Cont = "Δ Containment, standardized shift (pp)",
+    Shift_Cat = "Δ Catastrophic, standardized shift (pp)",
+    Row_Cont = "Δ Containment, improved row (pp)",
+    Row_Cat = "Δ Catastrophic, improved row (pp)"
+  ) |>
+  fmt_number(columns = c(Shift_Cont, Shift_Cat, Row_Cont, Row_Cat), scale_by = 100, decimals = 2) |>
+  tab_options(table.font.size = 11, heading.title.font.size = 13.5, heading.subtitle.font.size = 11)
+
+best_row <- which.max(sens_df$Shift_Cont)
+```
+
+**How to interpret the results**
+
+Under these illustrative parameters, the largest standardized containment gain from S1 comes from changing the **`r transient_names[best_row]`** row (`r sprintf("%.2f", 100 * sens_df$Shift_Cont[best_row])` pp), not S1 itself (`r sprintf("%.2f", 100 * sens_df$Shift_Cont[1])` pp). Gains decline for deeper rows, to `r sprintf("%.2f", 100 * sens_df$Shift_Cont[6])` pp at S6, which is `r sprintf("%.0f", 100 * (1 - sens_df$Shift_Cont[6] / sens_df$Shift_Cont[best_row]))`% below the best row. So upstream rows do carry more leverage here, but the gradient is moderate (the best row is about `r sprintf("%.1f", sens_df$Shift_Cont[best_row] / sens_df$Shift_Cont[6])` times the last), not the sharp contrast suggested by comparing 27.5% to 2.7% across starting stages. Two caveats: the 0.05 shift is a different relative change in each row, and the table only covers attacks that start at S1. The ranking reflects the hand-set parameters.
+
+------------------------------------------------------------------------
+
+### Parameter Uncertainty (Dirichlet) {#parameter-uncertainty-dirichlet}
+
+Closed-form results are exact only **given $P$**, and $P$ is uncertain. To quantify that, each transient row is treated as Dirichlet($\alpha \cdot p_{\text{row}}$) over its non-zero entries (structural zeros stay zero), with concentration $\alpha = 50$ as a stand-in for "moderate confidence" in the elicited values. The solver is re-run on 5,000 sampled matrices per regime.
+
+```{r dirichlet-uncertainty}
+alpha_conc <- 50
+n_draws <- 5000
+
+draw_P <- function(P, alpha) {
+  for (i in seq_len(t_dim)) {
+    idx <- which(P[i, ] > 0)
+    g <- rgamma(length(idx), shape = alpha * P[i, idx])
+    P[i, idx] <- g / sum(g)
+  }
+  P
+}
+
+summarise_draw <- function(P) {
+  sol <- solve_absorbing_markov(P[1:t_dim, 1:t_dim], P[1:t_dim, 7:9], step_hours)
+  tibble(Stage = transient_names, cont = sol$B[, 1], cat = sol$B[, 2] + sol$B[, 3], hours = sol$hours)
+}
+
+set.seed(42)
+draws <- map(seq_len(n_draws), \(d) {
+  b <- summarise_draw(draw_P(P_baseline_raw, alpha_conc))
+  h <- summarise_draw(draw_P(P_hardened_raw, alpha_conc))
+  tibble(draw = d, Stage = b$Stage,
+         cont_b = b$cont, cat_b = b$cat, hours_b = b$hours,
+         cont_h = h$cont, cat_h = h$cat, hours_h = h$hours)
+}) |>
+  list_rbind() |>
+  mutate(Stage = factor(Stage, levels = transient_names))
+
+q05 <- \(x) quantile(x, 0.05)
+q95 <- \(x) quantile(x, 0.95)
+
+unc_summary <- draws |>
+  summarise(
+    cont_b_lo = q05(cont_b), cont_b_hi = q95(cont_b),
+    cat_b_lo = q05(cat_b), cat_b_hi = q95(cat_b),
+    hours_b_lo = q05(hours_b), hours_b_hi = q95(hours_b),
+    p_improved_better = mean(cont_h > cont_b),
+    .by = Stage
+  ) |>
+  left_join(res |> select(Stage = stage, cont_b, cat_b, hours_b) |> mutate(Stage = factor(Stage, levels = transient_names)),
+            by = "Stage") |>
+  arrange(Stage)
+
+unc_summary |>
+  transmute(
+    Stage,
+    Containment = sprintf("%.1f%% (%.1f–%.1f)", 100 * cont_b, 100 * cont_b_lo, 100 * cont_b_hi),
+    Catastrophic = sprintf("%.1f%% (%.1f–%.1f)", 100 * cat_b, 100 * cat_b_lo, 100 * cat_b_hi),
+    Hours = sprintf("%.1f (%.1f–%.1f)", hours_b, hours_b_lo, hours_b_hi),
+    p_improved_better
+  ) |>
+  gt() |>
+  tab_header(
+    title = "Baseline Outcomes with 90% Parameter-Uncertainty Intervals",
+    subtitle = sprintf("Point estimate (5th–95th percentile); Dirichlet α = %d, %s draws", alpha_conc, format(n_draws, big.mark = ","))
+  ) |>
+  cols_label(
+    Containment = "Containment",
+    Catastrophic = "Catastrophic",
+    Hours = "Time to resolution (h)",
+    p_improved_better = "P(improved > baseline containment)"
+  ) |>
+  fmt_number(columns = p_improved_better, decimals = 3) |>
+  tab_options(table.font.size = 11, heading.title.font.size = 13.5, heading.subtitle.font.size = 11)
+
+crossing_dist <- draws |>
+  summarise(
+    cross = which(cat_b > cont_b)[1],
+    .by = draw
+  ) |>
+  count(cross) |>
+  mutate(share = n / sum(n))
+
+p_cross_s3 <- crossing_dist |> filter(cross == 3) |> pull(share)
+```
+
+The improved-posture comparison draws baseline and improved matrices independently, so the last column checks whether the improvement survives parameter noise, not a paired control effect.
+
+**How to interpret the results**
+
+**The S3 crossing is fairly, not fully, stable.** In `r pct1(p_cross_s3)` of draws, catastrophic outcomes first become more likely than containment at S3 (the baseline point estimate); the remaining draws place the crossing at other stages (shares: `r paste0("S", crossing_dist$cross, " ", pct1(crossing_dist$share), collapse = "; ")`). The statement "S3 is the tipping point" is therefore conditional on these parameters and on the assumed concentration $\alpha$; a different $\alpha$ would change the interval widths.
+
+**Uncertainty is substantial for the point estimates.** At S3 the 90% interval for catastrophic probability is `r pct1(unc_summary$cat_b_lo[3])` to `r pct1(unc_summary$cat_b_hi[3])`, around the point estimate of `r pct1(res$cat_b[3])`.
+
+**The improved posture is robustly better.** The improved posture has higher containment than the baseline in at least `r pct1(min(unc_summary$p_improved_better))` of draws at every stage. Since the improved matrix was built to have higher A1 probabilities, this mostly confirms that the gap is large relative to Dirichlet noise; it does not validate any control.
+
+------------------------------------------------------------------------
+
+### Simulation Check of the Closed-Form Solver
+
+A short Monte Carlo run from S1 under the baseline matrix is a code-correctness check on $B$ and $\mathbf{t}$ (not a substitute for them: simulation is still needed for time-to-outcome percentiles and for propagating parameter uncertainty).
+
+```{r simulation-check}
+simulate_walk <- function(P, start) {
+  s <- start
+  steps <- 0
+  while (s <= t_dim) {
+    s <- sample.int(ncol(P), 1, prob = P[s, ])
+    steps <- steps + 1
+  }
+  c(outcome = s - t_dim, steps = steps)
+}
+
+set.seed(42)
+n_sim <- 20000
+sims <- map(seq_len(n_sim), \(k) simulate_walk(P_baseline_raw, 1)) |>
+  map(\(v) tibble(outcome = v[["outcome"]], steps = v[["steps"]])) |>
+  list_rbind()
+
+sim_check <- tibble(
+  Quantity = c(absorbing_names, "Expected steps from S1"),
+  Closed_form = c(base_solution$B[1, ], base_solution$steps[1]),
+  Simulated = c(prop.table(table(factor(sims$outcome, levels = 1:3))), mean(sims$steps))
 )
 
-scorecard_table %>%
-  gt() %>%
+stopifnot(all(abs(sim_check$Closed_form - sim_check$Simulated) < 0.03))
+
+sim_check |>
+  gt() |>
+  fmt_number(columns = c(Closed_form, Simulated), decimals = 3) |>
+  cols_label(Closed_form = "Closed form", Simulated = sprintf("Monte Carlo (%s walks)", format(n_sim, big.mark = ",")))
+```
+
+------------------------------------------------------------------------
+
+### Scorecard
+
+The scorecard summarizes the closed-form metrics under the illustrative baseline and improved-posture matrices. Time to resolution is shown in steps first and hours second.
+
+```{r governance-scorecard}
+scorecard_table <- res |>
+  transmute(
+    Kill_Chain_Stage = stage,
+    Baseline_Steps = steps_b,
+    Baseline_Hours = hours_b,
+    Baseline_Containment_Pct = cont_b * 100,
+    Baseline_Catastrophic_Pct = cat_b * 100,
+    Hardened_Containment_Pct = cont_h * 100,
+    Hardened_Catastrophic_Pct = cat_h * 100,
+    Containment_Uplift_pp = (cont_h - cont_b) * 100
+  )
+
+scorecard_table |>
+  gt() |>
   tab_header(
-    title = "Enterprise Cyber Kill-Chain Absorption Scorecard",
-    subtitle = "Closed-Form Absorbing Markov Chain Metrics: Baseline vs. Hardened Control Regimes"
-  ) %>%
+    title = "Kill-Chain Absorption Scorecard",
+    subtitle = "Closed-form absorbing Markov chain metrics: baseline vs. illustrative improved posture"
+  ) |>
   cols_label(
-    Kill_Chain_Stage = "Breach Entry Stage",
-    Baseline_Dwell_Hours = "Mean Dwell Time",
-    Baseline_Containment_Pct = "SOC Containment (Base)",
-    Baseline_Catastrophic_Pct = "Catastrophic Loss (Base)",
-    Hardened_Containment_Pct = "SOC Containment (Hard)",
-    Hardened_Catastrophic_Pct = "Catastrophic Loss (Hard)",
-    Absolute_Risk_Delta = "Net Containment Uplift"
-  ) %>%
-  fmt_number(columns = Baseline_Dwell_Hours, decimals = 1, pattern = "{x} hrs") %>%
-  fmt_percent(columns = c(Baseline_Containment_Pct, Baseline_Catastrophic_Pct, 
-                          Hardened_Containment_Pct, Hardened_Catastrophic_Pct), scale_values = FALSE, decimals = 1) %>%
-  fmt_number(columns = Absolute_Risk_Delta, decimals = 1, pattern = "+{x}%") %>%
+    Kill_Chain_Stage = "Starting Stage",
+    Baseline_Steps = "Time to Resolution (steps)",
+    Baseline_Hours = "Time to Resolution (hours)",
+    Baseline_Containment_Pct = "Containment (Base)",
+    Baseline_Catastrophic_Pct = "Catastrophic (Base)",
+    Hardened_Containment_Pct = "Containment (Improved)",
+    Hardened_Catastrophic_Pct = "Catastrophic (Improved)",
+    Containment_Uplift_pp = "Containment Uplift (pp)"
+  ) |>
+  fmt_number(columns = Baseline_Steps, decimals = 1) |>
+  fmt_number(columns = Baseline_Hours, decimals = 1, pattern = "{x} hrs") |>
+  fmt_percent(columns = c(Baseline_Containment_Pct, Baseline_Catastrophic_Pct,
+                          Hardened_Containment_Pct, Hardened_Catastrophic_Pct),
+              scale_values = FALSE, decimals = 1) |>
+  fmt_number(columns = Containment_Uplift_pp, decimals = 1, pattern = "+{x} pp") |>
   data_color(
     columns = Baseline_Catastrophic_Pct,
     direction = "column",
     palette = c("#ffffff", "#f8d7da", "#d9534f")
-  ) %>%
+  ) |>
   data_color(
     columns = Hardened_Containment_Pct,
     direction = "column",
     palette = c("#ffffff", "#d4edda", "#5cb85c")
-  ) %>%
+  ) |>
   tab_options(
     table.font.size = 11,
     heading.title.font.size = 13.5,
@@ -525,65 +769,63 @@ scorecard_table %>%
   )
 ```
 
-**How to understand the table and associated columns of the Cyber Governance Scorecard**
+**How to read the table**
 
-**Breach Entry Stage:** The specific tactical step in the cyber kill chain where the intruder currently resides or where defensive visibility first detects the intrusion. It establishes the starting point for calculating all subsequent attack pathways.
+**Starting Stage:** The stage where the attack starts, treated as equivalent to "having reached" that stage (Markov assumption).
 
-**Mean Dwell Time:** The expected total time (in hours) an attacker remains active in the network before the incident reaches a final conclusion. As adversaries advance deeper into the environment, this available response window shrinks significantly.
+**Time to Resolution:** Expected time until the incident ends in any outcome, including containment, in steps and in hours at an assumed 4 hours per step. Not adversary dwell time.
 
-**SOC Containment (Base):** The probability that the Security Operations Center successfully neutralizes the threat under current, unmitigated baseline operating conditions. This represents the likelihood of an early defensive win without catastrophic impact.
+**Containment (Base / Improved):** Probability of ending in A1, contained or terminated, under the baseline and the illustrative improved posture.
 
-**Catastrophic Loss (Base):** The probability that an intrusion ends in enterprise-wide ransomware or major data exfiltration under current baseline defenses. This highlights the inherent tail-risk exposure as an attacker penetrates deeper into the network.
+**Catastrophic (Base / Improved):** Probability of ending in A2 or A3 (counts only the first catastrophic outcome).
 
-**SOC Containment (Hard):** The improved likelihood of neutralizing the threat after implementing enhanced security investments, such as Zero Trust segmentation and automated Endpoint Detection & Response (EDR). It reflects the defensive efficacy of a hardened posture.
+**Containment Uplift (pp):** The change in containment probability, in **percentage points**, between the two matrices. It is a difference between two hand-set matrices, not a measured return on investment.
 
-**Catastrophic Loss (Hard):** The remaining residual probability of catastrophic business disruption after deploying hardened defensive controls. It demonstrates how modern security safeguards compress severe downside exposure across every attack tier.
+------------------------------------------------------------------------
 
-**Net Containment Uplift:** The absolute percentage-point increase in successful containment gained by moving from baseline to hardened defenses. It provides executive leadership with a direct return-on-investment metric for justifying cybersecurity capital expenditures.
+**How to interpret the results of the scorecard**
 
----
+**Catastrophic outcomes overtake containment at S3.** Under the baseline parameters, catastrophic probability rises from `r pct1(res$cat_b[2])` at S2 to `r pct1(res$cat_b[3])` at S3 (versus `r pct1(res$cont_b[3])` containment) and reaches `r pct1(res$cat_b[6])` by S6. This is a consequence of the hand-set parameters, and the uncertainty analysis above attaches a 90% interval of `r pct1(unc_summary$cat_b_lo[3])`–`r pct1(unc_summary$cat_b_hi[3])` to the S3 value. It is suggestive that identity and credential controls matter around this stage, but it does not show that perimeter defense alone is insufficient.
 
-**How to interpret the results of the Scorecard**
+**The window shortens with depth.** Expected time to resolution falls from `r sprintf("%.1f", res$hours_b[1])` hours at S1 to `r sprintf("%.1f", res$hours_b[6])` hours at S6, a decline of `r sprintf("%.0f", 100 * (1 - res$hours_b[6] / res$hours_b[1]))`%. This is the time to any resolution; it shrinks partly because fewer stages remain. The time scale rests on the assumed 4-hour step.
 
-**The Privilege Escalation Chipping Point:** In the baseline operating model, risk shifts decisively past Stage 2. Once an attacker advances from S2: Initial Foothold into S3: Privilege Escalation, the probability of catastrophic business loss crosses the 50% threshold (rising from 38.1% to 52.9%) and peaks at 89.5% by S6: Payload Staging. This proves that perimeter defense alone is insufficient; identity security and credential vaulting represent the critical mathematical inflection point for preventing severe breaches.
+**Improvement from a hand-set matrix.** Moving from the baseline to the illustrative improved posture raises containment by `r sprintf("%.1f", 100 * min(res$uplift))` to `r sprintf("%.1f", 100 * max(res$uplift))` percentage points depending on the starting stage, with the largest uplifts at S3 and S4 (`r sprintf("%.1f", 100 * res$uplift[3])` and `r sprintf("%.1f", 100 * res$uplift[4])` pp). Because all rows change together, this does not identify which stage's control matters most; see the one-row-at-a-time table.
 
-**Compressing the Incident Response Window:** Mean dwell time steadily degrades from 14.2 hours at initial reconnaissance down to 4.2 hours once an attacker reaches payload staging. Because the available containment runway shrinks by more than 70% as an adversary moves laterally, Security Operations cannot rely on manual triage workflows. Rapid, automated micro-isolation must execute within the first 4 to 8 hours of compromise to prevent irreversible infrastructure damage.
+------------------------------------------------------------------------
 
-**Quantifiable ROI on Defensive Hardening:** Implementing targeted controls (such as Zero Trust micro-segmentation, EDR, and strict multi-factor authentication) delivers massive, verifiable risk compression. The hardened architecture drives a +39.9% to +40.5% net containment uplift precisely across the lateral movement and privilege escalation phases, slashing the baseline catastrophic loss probability at the perimeter from 27.5% down to just 2.7%. This directly translates cybersecurity capital expenditures into a measurable reduction in enterprise tail risk.
+**Scorecard Insights**
 
----
+**Insight 1 (Early-Stage Response Time):** Under the baseline, an attack starting at *S1: Recon & Phishing* has an expected time to resolution of `r sprintf("%.1f", res$hours_b[1])` hours; conditional on ending in a catastrophic outcome, the expected time to that outcome is `r sprintf("%.1f", res$t_cat_b[1])` hours. Response targets such as MTTD under 4 hours and MTTR under 8 hours on initial endpoint compromises are consistent with this picture of neutralizing activity before *S3: Privilege Escalation*, but they follow from the assumed 4-hour step, not from the model, and should be set from observed dwell times.
 
-**Cyber Governance Scorecard Insights**
+**Insight 2 (Active Directory Tier-0 Isolation):** If an adversary reaches *S5: Domain Dominance*, the baseline probability of a catastrophic outcome is `r pct1(res$cat_b[5])` (above 80%). Under these parameters that supports prioritizing segregation of identity infrastructure; the figure is a function of the assumed S5 row, not a measured rate.
 
-**Insight 1 (Lateral Movement Choke-Point SLA):** Attacks entering at *S1: Recon & Phishing* have an average dwell time of 21.6 hours before terminal absorption. Security Operations must enforce a Mean Time to Detect (MTTD) of under 4.0 hours and a Mean Time to Respond (MTTR) of under 8.0 hours on initial endpoint compromises, neutralizing threats before they transition into *S3: Privilege Escalation*.
-
-**Insight 2 (Active Directory Tier-0 Isolation):** If an adversary successfully reaches *S5: Domain Dominance*, the probability of catastrophic business disruption (Ransomware or Exfiltration) exceeds 80% under baseline operations. Identity infrastructure must be segregated with hardware-enforced MFA and automated domain controller isolation protocols to prevent payload staging.
-
-**Insight 3 (Control Capital Allocation):** The implementation of automated Endpoint Detection & Response (EDR) and micro-segmentation increases overall SOC containment likelihood from 48.2% to 81.4% for perimeter breaches, delivering a 33.2% net risk reduction and mathematically validating security capital investments.
+**Insight 3 (Control Prioritization):** Moving to the illustrative improved posture raises containment for an attack starting at S1 from `r pct1(res$cont_b[1])` to `r pct1(res$cont_h[1])` (`r sprintf("%+.1f", 100 * res$uplift[1])` pp). Hardening one row at a time, the largest standardized containment gain from S1 comes from `r transient_names[best_row]`, with gains declining for deeper rows. This illustrates how a control improvement translates into outcome probabilities; investment decisions require cost and loss inputs that this model does not contain.
 
 ------------------------------------------------------------------------
 
 ### Insights & Conclusions
 
-This project shows that enterprise cyber risk can be modeled as rigorously as financial risk. By using Absorbing Markov Chains instead of subjective risk heatmaps, executive leaders get clear insight into how attacks progress, how long adversaries stay in each stage, and the chances of major losses. The six stages of the kill chain lead to three possible outcomes, and the Fundamental Matrix gives exact estimates for dwell times and loss probabilities at every stage, all without running any simulations. This replaces thousands of Monte Carlo trials with a single matrix calculation that risk committees can easily follow. The results highlight a clear turning point: average dwell time drops from 14.2 hours at the start to 4.2 hours by the payload stage, and the chance of a catastrophic outcome becomes more likely than SOC containment at S3: Privilege Escalation, where the risk of major loss jumps from 38.1% to 52.9%.
+This project illustrates how an attack progression can be represented as an absorbing Markov chain and solved in closed form. Six kill-chain-style stages lead to three outcomes, and the Fundamental Matrix gives, for an assumed transition matrix, the expected time to resolution and the outcome probabilities from every starting stage, without simulation. Under the illustrative baseline, expected time to resolution falls from `r sprintf("%.1f", res$hours_b[1])` hours at S1 to `r sprintf("%.1f", res$hours_b[6])` hours at S6, and catastrophic outcomes become more likely than containment at S3 (`r pct1(res$cat_b[3])` versus `r pct1(res$cont_b[3])`; 90% parameter-uncertainty interval `r pct1(unc_summary$cat_b_lo[3])`–`r pct1(unc_summary$cat_b_hi[3])` for the catastrophic probability). The closed form is exact given $P$, but $P$ is uncertain, which is why the intervals matter.
 
-This turning point changes how we think about where security investments have the most impact. The Fundamental Matrix shows that putting defenses in place early in the kill chain, like automated phishing filters and credential protection, cuts risk much more than trying to contain attacks later. For example, the same security controls reduce catastrophic loss from 27.5% to 2.7% if used at the first stage, but only from 89.5% to 63.2% if applied at the last stage. This gives risk committees and boards a clear, auditable way to match cybersecurity spending with measurable reductions in Cyber Value-at-Risk (CyVaR), turning broad governance goals on detection, identity, and controls into specific, confidence-backed numbers.
+On where to act, the evidence is more limited than a comparison across starting stages suggests. The one-row-at-a-time analysis shows the largest marginal containment gain from S1 at the **`r transient_names[best_row]`** row, with a moderate decline for later rows. That is a more defensible basis for prioritizing than the contrast between starting stages, which the setup guarantees. Whether any real control (MFA, EDR, Zero Trust) corresponds to these parameter changes is not something this model can establish: there are no costs, loss magnitudes, or control-to-parameter mapping. Loss quantification, including any Cyber Value-at-Risk (CyVaR) figure, would need a stated loss mapping that is not part of this version.
 
-Although this model’s closed-form solutions show how attack graph simulations work, it is important to note that the transition probabilities were set using synthetic data based on industry benchmarks. In real organizations, attackers adapt, transitions may not always follow Markovian rules, and network setups can be very different. To use this model in practice, companies need to set parameters using their own SIEM data, keep calibrating with tabletop exercises, and have incident response teams regularly check that the model stays accurate as conditions change.
+The closed-form solution replaces simulation for expected values and absorption probabilities; Monte Carlo is still needed for time-to-outcome percentiles and parameter uncertainty (the simulation check above reproduces $B$ and $\mathbf{t}$ as a correctness test). Other limitations are listed under [Parameterization and Assumptions](#parameterization-and-assumptions): the memoryless property, constant per-step hazard, geometric holding times, a single assumed step length, the mutually exclusive A2/A3 outcomes, and hand-set probabilities that are not calibrated to any cited benchmark. Real attackers adapt, and real environments differ.
 
-The primary sources of this real world data include:
+#### Future work: real-world data sources
+
+The current model uses none of the following sources. They indicate where recalibration and a richer model would draw data.
 
 **Network Telemetry & Flow Logs:** Real connection edges and service dependencies come from VPC Flow Logs (AWS/Azure/GCP), Zeek/Corelight network analysis sensors, and NetFlow/IPFIX from core network routers and firewalls.
 
 **Service Dependency & Configuration Management Databases (CMDB):** Service-to-service call maps are extracted from application performance monitoring tools (e.g., Datadog, Dynatrace), service mesh registries (e.g., Istio, Envoy), and enterprise CMDBs (e.g., ServiceNow).
 
-**Vulnerability Management & Posture Assessment Scanners:** Real-world CVSS scores, exploit metrics, and missing patches are pulled directly via API from enterprise vulnerability scanners such as Tenable Nessus, Qualys, Rapid7 InsightVM, or cloud posture platforms (Wiz, Prisma Cloud).
+**Vulnerability Management & Posture Assessment Scanners:** CVSS scores, exploit metrics, and missing patches are pulled via API from enterprise vulnerability scanners such as Tenable Nessus, Qualys, Rapid7 InsightVM, or cloud posture platforms (Wiz, Prisma Cloud).
 
 **Active Directory & Identity Access Graphs:** Identity edges and lateral movement pathways are exported from tools like BloodHound Enterprise, Microsoft Entra ID, and Okta Access Graph logs.
 
-And finally let's not kid ourselves, obtaining this type of accurate data at scale is no easy task.
+Obtaining this type of accurate data at scale is not easy:
 
-``` {r difficulty-and-operational-challenges-table}
+```{r difficulty-and-operational-challenges-table}
 
 # 1. Recreate the dataset
 data_ingestion_tbl <- tibble(
@@ -656,9 +898,6 @@ gt_table <- data_ingestion_tbl %>%
 gt_table
 
 ```
-
-
-
 
 ------------------------------------------------------------------------
 
